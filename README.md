@@ -1,6 +1,6 @@
 ### 项目演示
 
-1. 地址：[http://www.qiujie.net.cn](http://www.qiujie.net.cn)
+1. 地址：<a href="http://www.qiujie.net.cn" target="_blank" rel="noopener noreferrer">http://www.qiujie.net.cn</a>
 2. 账号：admin
 3. 密码：123 (其他账号的密码也为123)
 
