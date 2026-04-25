@@ -1,6 +1,6 @@
 ### 项目演示
 
-1. 地址：http://www.qiujie.net.cn
+1. 地址：https://qiujie.net.cn
 2. 账号：admin
 3. 密码：123 (其他账号的密码也为123)
 
