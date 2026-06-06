@@ -47,10 +47,8 @@ Required GitHub Environment secrets for environment `dev`:
 - `DEPLOY_KNOWN_HOSTS`
 - `DEPLOY_HEALTHCHECK_URL`
 
-Required repository secret for isolated CI integration tests:
-
-- `CI_DB_PASSWORD`
-- `CI_JWT_SECRET`
+Isolated CI integration tests derive disposable MySQL and JWT values from the
+GitHub Actions run context. They do not require repository secrets.
 
 Optional GitHub repository variable:
 
