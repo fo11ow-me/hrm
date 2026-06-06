@@ -99,6 +99,12 @@ jobs:
           CI_DB_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
         run: MYSQL_PWD="$CI_DB_PASSWORD" mysql --host=127.0.0.1 --user=root < deploy/ci/init-test-db.sql
 
+      - name: Generate disposable JWT secret
+        run: |
+          jwt_secret="$(openssl rand -base64 48 | tr -d '\n')"
+          echo "::add-mask::$jwt_secret"
+          printf 'TEST_JWT_SECRET=%s\n' "$jwt_secret" >> "$GITHUB_ENV"
+
       - name: Run integration tests
         working-directory: hrm-server
         env:
@@ -109,7 +115,6 @@ jobs:
           TEST_REDIS_HOST: 127.0.0.1
           TEST_REDIS_PORT: "6379"
           TEST_REDIS_PASSWORD: ""
-          TEST_JWT_SECRET: AA${{ github.sha }}AA${{ github.sha }}
         run: mvn -B -DskipUTs=true verify
 
   frontend:
