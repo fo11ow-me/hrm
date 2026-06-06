@@ -1,0 +1,73 @@
+.DS_Store
+
+# Build output and dependencies
+**/node_modules/
+**/dist/
+**/target/
+*.log
+hs_err_pid*.log
+replay_pid*.log
+
+# Local and production environment files
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+/deploy/release.env
+**/application-dev.yml
+**/application-prod.yml
+
+# Certificates, keys, archives, and deployment bundles
+**/ssl/
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.tar
+*.tar.gz
+*.zip
+
+# Database exports and server-only material
+*.sql
+!deploy/ci/init-test-db.sql
+!hrm-server/src/test/resources/sql/*.sql
+*.rdb
+/remote/
+/scripts/verify-server-file-flows.ps1
+/docker-compose.yml
+/hrm-server/docker-compose.yml
+/hrm-admin/docker-compose.yml
+/hrm-admin/docker-build-push.sh
+
+# Uploaded/runtime files
+file/
+
+# IDE and agent files
+.idea/
+.vscode/
+.claude/
+.codex/
+.playwright-mcp/
+.tmp_*.txt
+*.iml
+*.iws
+*.ipr
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS and tool metadata
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache
+.apt_generated
+/nbproject/private/
+/nbbuild/
+/nbdist/
+/.nb-gradle/

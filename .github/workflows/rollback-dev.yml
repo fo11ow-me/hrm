@@ -1,0 +1,63 @@
+name: Rollback dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Previously published immutable tag, for example sha-<commit>
+        required: true
+        type: string
+
+concurrency:
+  group: dev-deployment
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    name: Roll back dev
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Validate image tag
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          if [[ ! "$IMAGE_TAG" =~ ^sha-[0-9a-f]{40}$ ]]; then
+            echo "image_tag must match sha-<40 lowercase hex characters>" >&2
+            exit 2
+          fi
+
+      - name: Configure SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          echo "::add-mask::$DEPLOY_HOST"
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_deploy"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+
+      - name: Deploy selected release
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          DEPLOY_PATH="${DEPLOY_PATH:-/opt/hrm}"
+          ssh -i "$HOME/.ssh/id_deploy" -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "DEPLOY_DIR='$DEPLOY_PATH' bash '$DEPLOY_PATH/deploy.sh' '$IMAGE_TAG'" >/dev/null
+
+      - name: Verify public health endpoint
+        env:
+          DEPLOY_HEALTHCHECK_URL: ${{ secrets.DEPLOY_HEALTHCHECK_URL }}
+        run: |
+          if ! curl --fail --silent --output /dev/null "$DEPLOY_HEALTHCHECK_URL"; then
+            echo "public health check failed" >&2
+            exit 1
+          fi

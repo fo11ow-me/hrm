@@ -1,0 +1,41 @@
+services:
+  hrm-server:
+    image: ghcr.io/fo11ow-me/hrm-server:${IMAGE_TAG:?IMAGE_TAG is required}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8888
+      FILE_STORAGE_PATH: /opt/hrm/files
+    ports:
+      - "127.0.0.1:${BACKEND_BIND_PORT:-18888}:8888"
+    volumes:
+      - "${FILE_STORAGE_HOST_PATH:?FILE_STORAGE_HOST_PATH is required}:/opt/hrm/files"
+    networks:
+      - runtime
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8888/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
+
+  hrm-admin:
+    image: ghcr.io/fo11ow-me/hrm-admin:${IMAGE_TAG:?IMAGE_TAG is required}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FRONTEND_BIND_PORT:-18080}:8080"
+    networks:
+      - runtime
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+
+networks:
+  runtime:
+    external: true
+    name: ${EXTERNAL_DOCKER_NETWORK:?EXTERNAL_DOCKER_NETWORK is required}

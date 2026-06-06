@@ -1,0 +1,29 @@
+server:
+  port: 0
+
+spring:
+  datasource:
+    master:
+      jdbc-url: ${TEST_DB_MASTER_URL}
+      username: ${TEST_DB_USERNAME}
+      password: ${TEST_DB_PASSWORD}
+      driver-class-name: com.mysql.cj.jdbc.Driver
+    activiti:
+      jdbc-url: ${TEST_DB_ACTIVITI_URL}
+      username: ${TEST_DB_USERNAME}
+      password: ${TEST_DB_PASSWORD}
+      driver-class-name: com.mysql.cj.jdbc.Driver
+
+  redis:
+    host: ${TEST_REDIS_HOST:127.0.0.1}
+    port: ${TEST_REDIS_PORT:6379}
+    password: ${TEST_REDIS_PASSWORD:}
+    database: 0
+
+file-path: ./target/test-files/
+
+jwt:
+  secret: ${TEST_JWT_SECRET}
+
+assistant:
+  enabled: false

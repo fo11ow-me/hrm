@@ -1,0 +1,112 @@
+server:
+  port: ${SERVER_PORT:8888}
+
+spring:
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:prod}
+
+  datasource:
+    master:
+      jdbc-url: ${DB_MASTER_URL}
+      username: ${DB_USERNAME}
+      password: ${DB_PASSWORD}
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      type: com.zaxxer.hikari.HikariDataSource
+    activiti:
+      jdbc-url: ${DB_ACTIVITI_URL}
+      username: ${DB_USERNAME}
+      password: ${DB_PASSWORD}
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      type: com.zaxxer.hikari.HikariDataSource
+
+  activiti:
+    database-schema-update: ${ACTIVITI_SCHEMA_UPDATE:true}
+    history-level: full
+    db-history-used: true
+
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: ${MAX_FILE_SIZE:20MB}
+      max-request-size: ${MAX_REQUEST_SIZE:30MB}
+
+  redis:
+    host: ${REDIS_HOST}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD}
+    database: ${REDIS_DATABASE:0}
+    lettuce:
+      pool:
+        max-idle: 16
+        max-active: 32
+        min-idle: 8
+
+  mvc:
+    pathmatch:
+      matching-strategy: ant-path-matcher
+
+  main:
+    allow-bean-definition-overriding: true
+
+mybatis-plus:
+  configuration:
+    log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.nologging.NoLoggingImpl}
+  type-enums-package: com.qiujie.enums
+  mapper-locations: classpath:mapper/*.xml
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+
+file-path: ${FILE_STORAGE_PATH:/opt/hrm/files}
+
+jwt:
+  secret: ${JWT_SECRET}
+
+assistant:
+  enabled: ${ASSISTANT_ENABLED:false}
+  timeout-seconds: ${ASSISTANT_TIMEOUT_SECONDS:15}
+  retention-days: ${ASSISTANT_RETENTION_DAYS:30}
+  provider:
+    base-url: ${ASSISTANT_PROVIDER_BASE_URL:}
+    api-key: ${ASSISTANT_PROVIDER_API_KEY:}
+    model: ${ASSISTANT_PROVIDER_MODEL:}
+
+holidays:
+  - 2024-01-01
+  - 2024-02-10
+  - 2024-02-11
+  - 2024-02-12
+  - 2024-02-13
+  - 2024-02-14
+  - 2024-02-15
+  - 2024-02-16
+  - 2024-02-17
+  - 2024-04-04
+  - 2024-04-05
+  - 2024-04-06
+  - 2024-05-01
+  - 2024-05-02
+  - 2024-05-03
+  - 2024-05-04
+  - 2024-05-05
+  - 2024-06-08
+  - 2024-06-09
+  - 2024-06-10
+  - 2024-09-15
+  - 2024-09-16
+  - 2024-09-17
+  - 2024-10-01
+  - 2024-10-02
+  - 2024-10-03
+  - 2024-10-04
+  - 2024-10-05
+  - 2024-10-06
+  - 2024-10-07

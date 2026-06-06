@@ -1,0 +1,118 @@
+package ${package.Service};
+
+import ${package.Mapper}.${table.mapperName};
+import ${package.Entity}.${entity};
+
+import org.springframework.stereotype.Service;
+
+/**
+ * <p>
+ * $!{table.comment} 服务类
+ * </p>
+ *
+ * @author ${author}
+ * @since ${date}
+ */
+#if(${kotlin})
+interface ${table.serviceName} : ${superServiceClass}<${entity}>
+#else
+@Service
+public class  ${table.serviceName} extends ServiceImpl<${entity}Mapper,${entity} >{
+#end
+
+
+public ResponseDTO add(${entity} ${table.entityPath}){
+        if(save(${table.entityPath})){
+        return Response.success();
+        }
+        return Response.error();
+        }
+
+public ResponseDTO delete(Integer id){
+        if(removeById(id)){
+        return Response.success();
+        }
+        return Response.error();
+        }
+
+public ResponseDTO deleteBatch(List<Integer> ids){
+        if(removeBatchByIds(ids)){
+        return Response.success();
+        }
+        return Response.error();
+        }
+
+
+public ResponseDTO edit(${entity} ${table.entityPath}){
+        if(updateById(${table.entityPath})){
+        return Response.success();
+        }
+        return Response.error();
+        }
+
+
+public ResponseDTO query(Integer id){
+    ${entity} ${table.entityPath} =getById(id);
+        if(${table.entityPath} !=null){
+        return Response.success(${table.entityPath});
+        }
+        return Response.error();
+        }
+
+public ResponseDTO queryAll(){
+        List<${entity}> list=list();
+        return Response.success(list);
+        }
+
+
+public ResponseDTO list(Integer current,Integer size,String name){
+        IPage<${entity}> config=new Page<>(current,size);
+        QueryWrapper<${entity}> wrapper=null;
+        if(name!=""&&name!=null){
+        wrapper=new QueryWrapper<>();
+        wrapper.like("name",name);
+        }
+        IPage<${entity}> page=page(config,wrapper);
+        // 将响应数据填充到map中
+        Map map=new HashMap();
+        map.put("pages",page.getPages());
+        map.put("total",page.getTotal());
+        map.put("list",page.getRecords());
+        return Response.success(map);
+        }
+
+
+/**
+* 数据导出
+*
+* @param response
+* @return
+*/
+public void export(HttpServletResponse response,String filename)throws IOException{
+        List<${entity}> list=list();
+        HutoolExcelUtil.writeExcel(response,list,filename, ${entity}.class);
+        }
+
+/**
+ * 数据导入
+ *
+ * @param file
+ * @return
+ */
+public ResponseDTO imp(MultipartFile file)throws IOException{
+        InputStream inputStream=file.getInputStream();
+        ExcelReader reader=ExcelUtil.getReader(inputStream);
+        List<${entity}> list=reader.readAll(${entity}.class);
+        // IService接口中的方法.批量插入数据
+        if(saveBatch(list)){
+        return Response.success();
+        }
+        return Response.error();
+        }
+
+
+        }
+
+
+
+

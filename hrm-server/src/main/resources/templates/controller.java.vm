@@ -1,0 +1,100 @@
+package ${package.Controller};
+
+import ${package.Service}.${table.serviceName};
+import ${package.Entity}.${entity};
+
+import io.swagger.annotations.ApiOperation;
+import org.springframework.web.bind.annotation.*;
+
+import javax.annotation.Resource;
+
+
+#if(${superControllerClassPackage})
+import ${superControllerClassPackage};
+#end
+
+/**
+ * <p>
+ * $!{table.comment} 前端控制器
+ * </p>
+ *
+ * @author ${author}
+ * @since ${date}
+ */
+#if(${restControllerStyle})
+@RestController
+#else
+@Controller
+#end
+@RequestMapping("#if(${package.ModuleName})/${package.ModuleName}#end/#if(${controllerMappingHyphenStyle})${controllerMappingHyphen}#else${table.entityPath}#end")
+#if(${kotlin})
+class ${table.controllerName}#if(${superControllerClass}) : ${superControllerClass}()#end
+
+#else
+    #if(${superControllerClass})
+    public class ${table.controllerName} extends ${superControllerClass} {
+    #else
+    public class ${table.controllerName} {
+    #end
+@Resource
+private ${table.serviceName} ${table.entityPath}Service;
+
+@ApiOperation("新增")
+@PostMapping
+public ResponseDTO add(@RequestBody ${entity} ${table.entityPath}){
+        return this.${table.entityPath}Service.add(${table.entityPath});
+        }
+
+@ApiOperation("逻辑删除")
+@DeleteMapping("/{id}")
+public ResponseDTO delete(@PathVariable Integer id){
+        return this.${table.entityPath}Service.delete(id);
+        }
+
+@ApiOperation("批量逻辑删除")
+@DeleteMapping("/batch/{ids}")
+public ResponseDTO deleteBatch(@PathVariable List<Integer> ids){
+        return this.${table.entityPath}Service.deleteBatch(ids);
+        }
+
+@ApiOperation("编辑更新")
+@PutMapping
+public ResponseDTO edit(@RequestBody ${entity} ${table.entityPath}){
+        return this.${table.entityPath}Service.edit(${table.entityPath});
+        }
+
+@ApiOperation("查询")
+@GetMapping("/{id}")
+public ResponseDTO query(@PathVariable Integer id){
+        return this.${table.entityPath}Service.query(id);
+        }
+
+@ApiOperation("查询所有")
+@GetMapping("/all")
+public ResponseDTO queryAll(){
+        return this.${table.entityPath}Service.queryAll();
+        }
+
+@ApiOperation("条件查询")
+@GetMapping
+public ResponseDTO list(@RequestParam(defaultValue = "1") Integer current,@RequestParam(defaultValue = "10") Integer size,String name){
+        return this.${table.entityPath}Service.list(current,size,name);
+        }
+
+
+@ApiOperation("数据导出接口")
+@GetMapping("/export/{filename}")
+public void export(HttpServletResponse response,@PathVariable String filename)throws IOException{
+        this.${table.entityPath}Service.export(response,filename);
+        }
+
+@ApiOperation("数据导入接口")
+@PostMapping("/import")
+public ResponseDTO imp(MultipartFile file)throws IOException{
+        return this.${table.entityPath}Service.imp(file);
+        }
+
+
+        }
+
+#end

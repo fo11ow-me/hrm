@@ -1,0 +1,12 @@
+title = "HRM gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Explicit non-secret placeholders"
+regexes = [
+  '''REPLACE_WITH_[A-Z0-9_]+''',
+  '''<[A-Z0-9_]+>''',
+  '''sha-0{40}'''
+]
