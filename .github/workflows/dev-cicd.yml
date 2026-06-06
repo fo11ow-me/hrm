@@ -109,7 +109,7 @@ jobs:
           TEST_REDIS_HOST: 127.0.0.1
           TEST_REDIS_PORT: "6379"
           TEST_REDIS_PASSWORD: ""
-          TEST_JWT_SECRET: ${{ github.sha }}${{ github.sha }}
+          TEST_JWT_SECRET: AA${{ github.sha }}AA${{ github.sha }}
         run: mvn -B -DskipUTs=true verify
 
   frontend:
