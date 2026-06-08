@@ -13,9 +13,13 @@ replay_pid*.log
 **/.env.*
 !**/.env.example
 !**/.env.*.example
-/deploy/release.env
 **/application-dev.yml
 **/application-prod.yml
+
+# Deployment configuration
+/deploy/
+**/docker-compose.yml
+**/Dockerfile
 
 # Certificates, keys, archives, and deployment bundles
 **/ssl/
@@ -30,15 +34,10 @@ replay_pid*.log
 
 # Database exports and server-only material
 *.sql
-!deploy/ci/init-test-db.sql
 !hrm-server/src/test/resources/sql/*.sql
 *.rdb
 /remote/
-/scripts/verify-server-file-flows.ps1
-/docker-compose.yml
-/hrm-server/docker-compose.yml
-/hrm-admin/docker-compose.yml
-/hrm-admin/docker-build-push.sh
+/scripts/
 
 # Uploaded/runtime files
 file/
