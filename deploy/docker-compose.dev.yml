@@ -1,0 +1,48 @@
+services:
+  mysql:
+    image: mysql:8.1.0
+    container_name: mysql8
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+    ports:
+      - "3306:3306"
+    networks:
+      - my_network
+    volumes:
+      - /opt/docker/mysql8/log:/var/log/mysql # 映射日志目录，宿主机:容器
+      - /opt/docker/mysql8/data:/var/lib/mysql # 映射数据目录，宿主机:容器
+      - /opt/docker/mysql8/conf.d:/etc/mysql/conf.d # 映射配置目录，宿主机:容器
+      - /etc/localtime:/etc/localtime:ro
+
+  redis:
+    image: redis:5.0
+    container_name: redis5
+    environment:
+      REDIS_PASSWORD: 123456
+    ports:
+      - "6379:6379"
+    networks:
+      - my_network
+    volumes:
+      - /opt/docker/redis5/data:/data
+      - /opt/docker/redis5/redis.conf:/usr/local/etc/redis/redis.conf
+      - /etc/localtime:/etc/localtime:ro
+    command: # 覆盖容器默认的执行命令
+      - redis-server
+      - /usr/local/etc/redis/redis.conf
+
+  registry:
+    image: registry:latest      #镜像来源
+    container_name: registry   #自定义服务名
+    ports: #暴露端口
+      - "5000:5000"
+    privileged: true     #这里把权限配置成true
+    restart: always      #开机后自己启动
+    volumes: #挂载目录配置
+      - /etc/docker/registry/config.yml:/etc/docker/registry/config.yml
+      - /var/lib/registry:/var/lib/registry
+
+networks:
+  my_network:
+    name: my_network
+    driver: bridge

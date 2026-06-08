@@ -46,8 +46,8 @@ export default {
   data () {
     return {
       staff: {
-          code: '',
-          password: ''
+        code: '',
+        password: ''
       },
       // 效验规则
       rules: {
