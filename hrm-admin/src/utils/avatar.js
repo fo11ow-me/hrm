@@ -12,6 +12,10 @@ export const setAvatar = (img) => {
       } else {
         img.src = defaultAvatar
       }
+    }).catch(error => {
+      // 文件不存在或其他错误时，使用默认头像
+      console.warn('头像加载失败:', error)
+      img.src = defaultAvatar
     })
   } else {
     img.src = defaultAvatar
