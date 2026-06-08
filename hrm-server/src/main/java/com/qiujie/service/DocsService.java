@@ -78,7 +78,7 @@ public class DocsService extends ServiceImpl<DocsMapper, Docs> {
             filename = docsList.get(0).getName();
         } else {
             try {
-                File file = new File(filePath + filename);
+                File file = new File(filePath, filename);
                 // 将文件存储到磁盘
                 uploadFile.transferTo(file);
             } catch (Exception e) {
