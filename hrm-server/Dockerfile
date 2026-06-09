@@ -1,3 +1,9 @@
+FROM eclipse-temurin:17-jre-jammy AS builder
+
+WORKDIR /workspace
+COPY target/hrm-server-*.jar app.jar
+RUN java -Djarmode=layertools -jar app.jar extract
+
 FROM eclipse-temurin:17-jre-jammy
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -9,7 +15,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && useradd --system --gid app --home-dir /opt/hrm --create-home app
 
 WORKDIR /opt/hrm
-COPY --chown=app:app target/hrm-server-*.jar app.jar
+
+# 分层复制：依赖层（改 pom.xml 才变）→ 应用层（改代码才变）
+COPY --from=builder --chown=app:app /workspace/dependencies/ ./
+COPY --from=builder --chown=app:app /workspace/spring-boot-loader/ ./
+COPY --from=builder --chown=app:app /workspace/snapshot-dependencies/ ./
+COPY --from=builder --chown=app:app /workspace/application/ ./
 
 USER app
 EXPOSE 8888
@@ -17,4 +28,4 @@ EXPOSE 8888
 HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=5 \
   CMD curl --fail --silent --show-error http://127.0.0.1:8888/actuator/health > /dev/null || exit 1
 
-ENTRYPOINT ["java", "-Xmx512m", "-jar", "/opt/hrm/app.jar"]
+ENTRYPOINT ["java", "-Xmx512m", "org.springframework.boot.loader.JarLauncher"]
