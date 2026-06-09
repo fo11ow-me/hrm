@@ -36,7 +36,7 @@ replay_pid*.log
 *.sql
 !hrm-server/src/test/resources/sql/*.sql
 *.rdb
-/remote/
+/sql/
 /scripts/
 
 # Uploaded/runtime files

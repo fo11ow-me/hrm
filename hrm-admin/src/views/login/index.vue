@@ -4,7 +4,7 @@
       style="margin: 130px auto; background-color: #fff; width:400px; height:330px;padding: 20px; border-radius:10px">
       <div style="height: 60px; line-height: 60px; text-align: center">
         <img
-          src="../../assets/logo.png"
+          src="../../assets/images/logo.png"
           alt=""
           style="width: 20px; position: relative; top: 5px;"
         />
