@@ -22,30 +22,35 @@ public class AttendanceController {
 
     @ApiOperation("新增")
     @PostMapping
+    @PreAuthorize("hasAnyAuthority('performance:attendance:add')")
     public ResponseDTO add(@RequestBody Attendance attendance) {
         return this.attendanceService.add(attendance);
     }
 
     @ApiOperation("逻辑删除")
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('performance:attendance:delete')")
     public ResponseDTO delete(@PathVariable Integer id) {
         return this.attendanceService.delete(id);
     }
 
     @ApiOperation("批量逻辑删除")
     @DeleteMapping("/batch/{ids}")
+    @PreAuthorize("hasAnyAuthority('performance:attendance:delete')")
     public ResponseDTO deleteBatch(@PathVariable List<Integer> ids) {
         return this.attendanceService.deleteBatch(ids);
     }
 
     @ApiOperation("编辑更新")
     @PutMapping
+    @PreAuthorize("hasAnyAuthority('performance:attendance:edit')")
     public ResponseDTO edit(@RequestBody Attendance attendance) {
         return this.attendanceService.edit(attendance);
     }
 
     @ApiOperation("查询单条")
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('performance:attendance:query')")
     public ResponseDTO query(@PathVariable Integer id) {
         return this.attendanceService.query(id);
     }
@@ -92,6 +97,7 @@ public class AttendanceController {
 
     @ApiOperation("按员工和日期查询")
     @GetMapping("/{id}/{date}")
+    @PreAuthorize("hasAnyAuthority('performance:attendance:query')")
     public ResponseDTO queryByStaffIdAndDate(@PathVariable Integer id, @PathVariable String date) {
         return this.attendanceService.queryByStaffIdAndDate(id, date);
     }

@@ -32,30 +32,35 @@ public class SalaryController {
 
     @ApiOperation("新增")
     @PostMapping
+    @PreAuthorize("hasAnyAuthority('money:salary:add')")
     public ResponseDTO add(@RequestBody Salary salary) {
         return this.salaryService.add(salary);
     }
 
     @ApiOperation("逻辑删除")
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('money:salary:delete')")
     public ResponseDTO delete(@PathVariable Integer id) {
         return this.salaryService.delete(id);
     }
 
     @ApiOperation("批量逻辑删除")
     @DeleteMapping("/batch/{ids}")
+    @PreAuthorize("hasAnyAuthority('money:salary:delete')")
     public ResponseDTO deleteBatch(@PathVariable List<Integer> ids) {
         return this.salaryService.deleteBatch(ids);
     }
 
     @ApiOperation("编辑更新")
     @PutMapping
+    @PreAuthorize("hasAnyAuthority('money:salary:edit')")
     public ResponseDTO edit(@RequestBody Salary salary) {
         return this.salaryService.edit(salary);
     }
 
     @ApiOperation("查询")
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('money:salary:query')")
     public ResponseDTO query(@PathVariable Integer id) {
         return this.salaryService.query(id);
     }

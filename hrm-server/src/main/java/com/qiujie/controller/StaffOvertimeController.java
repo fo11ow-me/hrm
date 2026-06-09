@@ -29,30 +29,35 @@ public class StaffOvertimeController {
 
     @ApiOperation("新增")
     @PostMapping
+    @PreAuthorize("hasAnyAuthority('performance:overtime:add')")
     public ResponseDTO add(@RequestBody StaffOvertime staffOvertime) {
         return this.staffOvertimeService.add(staffOvertime);
     }
 
     @ApiOperation("逻辑删除")
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('performance:overtime:delete')")
     public ResponseDTO delete(@PathVariable Integer id) {
         return this.staffOvertimeService.delete(id);
     }
 
     @ApiOperation("批量逻辑删除")
     @DeleteMapping("/batch/{ids}")
+    @PreAuthorize("hasAnyAuthority('performance:overtime:delete')")
     public ResponseDTO deleteBatch(@PathVariable List<Integer> ids) {
         return this.staffOvertimeService.deleteBatch(ids);
     }
 
     @ApiOperation("编辑更新")
     @PutMapping
+    @PreAuthorize("hasAnyAuthority('performance:overtime:edit')")
     public ResponseDTO edit(@RequestBody StaffOvertime staffOvertime) {
         return this.staffOvertimeService.edit(staffOvertime);
     }
 
     @ApiOperation("查询")
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('performance:overtime:query')")
     public ResponseDTO query(@PathVariable Integer id) {
         return this.staffOvertimeService.query(id);
     }
@@ -81,6 +86,7 @@ public class StaffOvertimeController {
 
     @ApiOperation("查询")
     @GetMapping("/{id}/{date}")
+    @PreAuthorize("hasAnyAuthority('performance:overtime:query')")
     public ResponseDTO queryByStaffIdAndDate(@PathVariable Integer id,@PathVariable String date) {
         return this.staffOvertimeService.queryByStaffIdAndDate(id,date);
     }
@@ -95,6 +101,7 @@ public class StaffOvertimeController {
 
     @ApiOperation("查询")
     @GetMapping("/time/off/{id}")
+    @PreAuthorize("hasAnyAuthority('performance:overtime:query')")
     public ResponseDTO queryTimeOffDaysByStaffId(@PathVariable Integer id) {
         return this.staffOvertimeService.queryTimeOffDaysByStaffId(id);
     }
