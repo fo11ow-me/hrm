@@ -1,0 +1,14 @@
+node_modules
+.git
+.github
+.idea
+**/target
+**/node_modules
+**/.git
+**/dist
+*.log
+*.md
+*.key
+*.pem
+deploy/deploy.sh
+file/
