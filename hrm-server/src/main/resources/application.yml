@@ -65,10 +65,13 @@ management:
       probes:
         enabled: true
 
-file-path: ${FILE_STORAGE_PATH:/opt/hrm/files}
+file-path: ${FILE_STORAGE_PATH:/opt/app/hrm/files}
 
 jwt:
   secret: ${JWT_SECRET}
+
+staff:
+  default-password: ${STAFF_DEFAULT_PASSWORD:123}
 
 assistant:
   enabled: ${ASSISTANT_ENABLED:false}
