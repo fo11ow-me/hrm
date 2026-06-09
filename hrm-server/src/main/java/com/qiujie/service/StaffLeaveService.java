@@ -9,15 +9,19 @@ import com.qiujie.dto.ResponseDTO;
 import com.qiujie.entity.Staff;
 import com.qiujie.entity.StaffLeave;
 import com.qiujie.enums.AuditStatusEnum;
+import com.qiujie.enums.BusinessStatusEnum;
 import com.qiujie.mapper.StaffLeaveMapper;
 import com.qiujie.mapper.StaffMapper;
 import com.qiujie.util.EnumUtil;
 import com.qiujie.util.EasyExcelUtil;
+import com.qiujie.util.SecurityUtil;
 import com.qiujie.vo.StaffLeaveVO;
 import org.activiti.engine.RuntimeService;
 import org.activiti.engine.TaskService;
 import org.activiti.engine.runtime.ProcessInstance;
 import org.activiti.engine.task.Task;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,6 +44,8 @@ import java.util.stream.Collectors;
 @Service
 public class StaffLeaveService extends ServiceImpl<StaffLeaveMapper, StaffLeave> {
 
+    private static final Logger log = LoggerFactory.getLogger(StaffLeaveService.class);
+
     @Autowired
     private StaffLeaveMapper staffLeaveMapper;
 
@@ -51,6 +57,40 @@ public class StaffLeaveService extends ServiceImpl<StaffLeaveMapper, StaffLeave>
 
     @Autowired
     private TaskService taskService;
+
+    @Autowired
+    private SecurityUtil securityUtil;
+
+    /**
+     * 获取当前登录用户的工号
+     *
+     * @return 工号，如果未登录或用户不存在则返回 null
+     */
+    private String getCurrentStaffCode() {
+        Integer currentStaffId = securityUtil.getCurrentOperatorId();
+        if (currentStaffId == null) {
+            return null;
+        }
+        Staff currentStaff = this.staffMapper.selectById(currentStaffId);
+        return currentStaff != null ? currentStaff.getCode() : null;
+    }
+
+    /**
+     * 验证当前用户并获取工号
+     *
+     * @return 工号，如果验证失败则返回错误响应
+     */
+    private Object validateAndGetCode() {
+        Integer currentStaffId = securityUtil.getCurrentOperatorId();
+        if (currentStaffId == null) {
+            return Response.error(BusinessStatusEnum.UNAUTHORIZED);
+        }
+        Staff currentStaff = this.staffMapper.selectById(currentStaffId);
+        if (currentStaff == null) {
+            return Response.error("用户信息不存在");
+        }
+        return currentStaff.getCode();
+    }
 
     public ResponseDTO add(StaffLeave staffLeave) {
         if (save(staffLeave)) {
@@ -193,14 +233,29 @@ public class StaffLeaveService extends ServiceImpl<StaffLeaveMapper, StaffLeave>
     }
 
     /**
-     * 请假
+     * 请假申请
      *
-     * @param staffLeave
-     * @param code       工号
-     * @return
+     * @param staffLeave 请假信息
+     * @return 操作结果
      */
     @Transactional
-    public ResponseDTO apply(StaffLeave staffLeave, String code) {
+    public ResponseDTO apply(StaffLeave staffLeave) {
+        // 验证当前用户并获取工号
+        Object codeResult = validateAndGetCode();
+        if (codeResult instanceof ResponseDTO) {
+            return (ResponseDTO) codeResult;
+        }
+        String code = (String) codeResult;
+        Integer currentStaffId = securityUtil.getCurrentOperatorId();
+
+        // 验证请假归属
+        if (!staffLeave.getStaffId().equals(currentStaffId)) {
+            log.warn("Unauthorized leave application: currentStaffId={}, targetStaffId={}",
+                     currentStaffId, staffLeave.getStaffId());
+            return Response.error(BusinessStatusEnum.FORBIDDEN);
+        }
+
+        // 检查是否有待审核的请假
         List<StaffLeave> staffLeaveList = this.staffLeaveMapper.selectList(new QueryWrapper<StaffLeave>().eq("staff_id", staffLeave.getStaffId())
                 .and(i -> i
                         .eq("status", AuditStatusEnum.UNAUDITED).or()
@@ -210,44 +265,75 @@ public class StaffLeaveService extends ServiceImpl<StaffLeaveMapper, StaffLeave>
         if (!staffLeaveList.isEmpty()) {
             return Response.error("你有待审核、被驳回、正在审核中的请假申请！");
         }
+
+        // 保存请假记录
         if (!save(staffLeave)) {
             return Response.error("提交失败！");
         }
-        Map<String, Object> map = new HashMap<>();
-        map.put("staff", code);
-        this.runtimeService.startProcessInstanceByKey("leave", String.valueOf(staffLeave.getId()), map);
-        Task task = this.taskService.createTaskQuery().processDefinitionKey("leave")
-                .processInstanceBusinessKey(String.valueOf(staffLeave.getId()))
-                .taskAssignee(code).singleResult();
-        if (task != null) {
-            List<Staff> staffList = this.staffMapper.queryByRole("hr");
-            Map<String, Object> map1 = new HashMap<>();
-            map1.put("hr", staffList.stream().map(Staff::getCode).collect(Collectors.joining(",")));
-            // 完成任务
-            taskService.complete(task.getId(), map1);
+
+        try {
+            // 启动流程实例
+            Map<String, Object> map = new HashMap<>();
+            map.put("staff", code);
+            ProcessInstance instance = this.runtimeService.startProcessInstanceByKey("leave", String.valueOf(staffLeave.getId()), map);
+
+            log.info("Started leave process: instanceId={}, businessKey={}, staff={}",
+                     instance.getId(), staffLeave.getId(), code);
+
+            // 自动完成第一个任务(请假申请节点)
+            Task task = this.taskService.createTaskQuery().processDefinitionKey("leave")
+                    .processInstanceBusinessKey(String.valueOf(staffLeave.getId()))
+                    .taskAssignee(code).singleResult();
+            if (task != null) {
+                List<Staff> staffList = this.staffMapper.queryByRole("hr");
+                if (staffList.isEmpty()) {
+                    log.warn("No HR staff found for approval");
+                    return Response.error("未找到人事审批人员，请联系管理员");
+                }
+
+                Map<String, Object> map1 = new HashMap<>();
+                map1.put("hr", staffList.stream().map(Staff::getCode).collect(Collectors.joining(",")));
+                taskService.complete(task.getId(), map1);
+
+                log.info("Completed leave apply task: taskId={}, hrCount={}", task.getId(), staffList.size());
+            }
+
+            return Response.success();
+        } catch (Exception e) {
+            log.error("Failed to start leave process: staffLeaveId={}", staffLeave.getId(), e);
+            // 回滚请假记录
+            removeById(staffLeave.getId());
+            return Response.error("流程启动失败，请稍后再试");
         }
-        return Response.success();
     }
 
     /**
-     * 拾取请假申请
+     * 拾取请假申请任务
      *
-     * @param staffLeave
-     * @param code       工号
-     * @return
+     * @param staffLeave 请假信息
+     * @return 操作结果
      */
     @Transactional
-    public ResponseDTO claim(StaffLeave staffLeave, String code) {
+    public ResponseDTO claim(StaffLeave staffLeave) {
+        String code = getCurrentStaffCode();
+        if (code == null) {
+            return Response.error(BusinessStatusEnum.UNAUTHORIZED);
+        }
+
         if (!updateById(staffLeave)) {
             return Response.error();
         }
+
         Task task = this.taskService.createTaskQuery().processDefinitionKey("leave")
                 .processInstanceBusinessKey(staffLeave.getId().toString())
                 .taskCandidateUser(code).singleResult();
         if (task == null) {
-            return Response.error();
+            return Response.error("任务不存在或无权拾取");
         }
+
         this.taskService.claim(task.getId(), code);
+        log.info("Claimed leave task: taskId={}, staff={}", task.getId(), code);
+
         return Response.success();
     }
 
@@ -255,54 +341,71 @@ public class StaffLeaveService extends ServiceImpl<StaffLeaveMapper, StaffLeave>
     /**
      * 归还请假任务
      *
-     * @param staffLeave
-     * @param code       工号
-     * @return
+     * @param staffLeave 请假信息
+     * @return 操作结果
      */
     @Transactional
-    public ResponseDTO revert(StaffLeave staffLeave, String code) {
+    public ResponseDTO revert(StaffLeave staffLeave) {
+        String code = getCurrentStaffCode();
+        if (code == null) {
+            return Response.error(BusinessStatusEnum.UNAUTHORIZED);
+        }
+
         if (!updateById(staffLeave)) {
             return Response.error();
         }
+
         Task task = this.taskService.createTaskQuery().processDefinitionKey("leave")
                 .processInstanceBusinessKey(staffLeave.getId().toString())
                 .taskAssignee(code).singleResult();
         if (task == null) {
-            return Response.error();
+            return Response.error("任务不存在或未分配给你");
         }
-        this.taskService.setAssignee(task.getId(), null); // userId不能为""
+
+        this.taskService.setAssignee(task.getId(), null);
+        log.info("Reverted leave task: taskId={}, staff={}", task.getId(), code);
+
         return Response.success();
     }
 
 
     /**
-     * 完成任务
+     * 完成审批任务
      *
-     * @param staffLeave
-     * @param code
-     * @return
+     * @param staffLeave 请假信息
+     * @return 操作结果
      */
     @Transactional
-    public ResponseDTO complete(StaffLeave staffLeave, String code) {
+    public ResponseDTO complete(StaffLeave staffLeave) {
+        String code = getCurrentStaffCode();
+        if (code == null) {
+            return Response.error(BusinessStatusEnum.UNAUTHORIZED);
+        }
+
         if (!updateById(staffLeave)) {
             return Response.error();
         }
+
         Task task = this.taskService.createTaskQuery().processDefinitionKey("leave")
                 .processInstanceBusinessKey(staffLeave.getId().toString())
                 .taskAssignee(code).singleResult();
-        if (task != null) {
-            Map<String, Object> map = new HashMap<>();
-            if (Objects.equals(task.getTaskDefinitionKey(), "hr_audit")) {
-                map.put("hrAuditStatus", staffLeave.getStatus().getCode());
-            } else if(Objects.equals(task.getTaskDefinitionKey(), "manager_audit")) {
-                map.put("managerAuditStatus", staffLeave.getStatus().getCode());
-            } else{
-                map = null;
-            }
-            taskService.complete(task.getId(), null, map);
-            return Response.success();
+
+        if (task == null) {
+            return Response.error("任务不存在或未分配给你");
         }
-        return Response.error();
+
+        Map<String, Object> map = new HashMap<>();
+        if (Objects.equals(task.getTaskDefinitionKey(), "hr_audit")) {
+            map.put("hrAuditStatus", staffLeave.getStatus().getCode());
+        } else if(Objects.equals(task.getTaskDefinitionKey(), "manager_audit")) {
+            map.put("managerAuditStatus", staffLeave.getStatus().getCode());
+        }
+
+        taskService.complete(task.getId(), map);
+        log.info("Completed leave audit task: taskId={}, staff={}, status={}",
+                 task.getId(), code, staffLeave.getStatus());
+
+        return Response.success();
     }
 
 

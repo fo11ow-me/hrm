@@ -69,30 +69,30 @@ export const getImportApi = () => {
 }
 
 // 请假
-export const apply = (data, code) => {
+export const apply = (data) => {
   return request({
-    url: url + '/apply/' + code, method: 'post', data
+    url: url + '/apply', method: 'post', data
   })
 }
 
 // 拾取任务
-export const claim = (data, code) => {
+export const claim = (data) => {
   return request({
-    url: url + '/claim/' + code, method: 'post', data
+    url: url + '/claim', method: 'post', data
   })
 }
 
 // 归还任务
-export const revert = (data, code) => {
+export const revert = (data) => {
   return request({
-    url: url + '/revert/' + code, method: 'post', data
+    url: url + '/revert', method: 'post', data
   })
 }
 
 // 完成任务
-export const complete = (data, code) => {
+export const complete = (data) => {
   return request({
-    url: url + '/complete/' + code, method: 'post', data
+    url: url + '/complete', method: 'post', data
   })
 }
 

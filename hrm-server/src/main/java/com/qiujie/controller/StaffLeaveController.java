@@ -105,33 +105,37 @@ public class StaffLeaveController {
     }
 
     @ApiOperation("申请请假")
-    @PostMapping("/apply/{code}")
-    public ResponseDTO apply(@RequestBody StaffLeave staffLeave,@PathVariable String code) {
-        return this.staffLeaveService.apply(staffLeave,code);
+    @PostMapping("/apply")
+    @PreAuthorize("hasAnyAuthority('performance:leave:apply')")
+    public ResponseDTO apply(@RequestBody StaffLeave staffLeave) {
+        return this.staffLeaveService.apply(staffLeave);
     }
 
     @ApiOperation("拾取请假任务")
-    @PostMapping("/claim/{code}")
+    @PostMapping("/claim")
     @PreAuthorize("hasAnyAuthority('performance:leave:claim')")
-    public ResponseDTO claim(@RequestBody StaffLeave staffLeave,@PathVariable String code) {
-        return this.staffLeaveService.claim(staffLeave,code);
+    public ResponseDTO claim(@RequestBody StaffLeave staffLeave) {
+        return this.staffLeaveService.claim(staffLeave);
     }
 
     @ApiOperation("归还请假任务")
-    @PostMapping("/revert/{code}")
-    public ResponseDTO revert(@RequestBody StaffLeave staffLeave,@PathVariable String code) {
-        return this.staffLeaveService.revert(staffLeave,code);
+    @PostMapping("/revert")
+    @PreAuthorize("hasAnyAuthority('performance:leave:claim')")
+    public ResponseDTO revert(@RequestBody StaffLeave staffLeave) {
+        return this.staffLeaveService.revert(staffLeave);
     }
 
 
     @ApiOperation("完成任务")
-    @PostMapping("/complete/{code}")
-    public ResponseDTO complete(@RequestBody StaffLeave staffLeave, @PathVariable String code) {
-        return this.staffLeaveService.complete(staffLeave,code);
+    @PostMapping("/complete")
+    @PreAuthorize("hasAnyAuthority('performance:leave:audit')")
+    public ResponseDTO complete(@RequestBody StaffLeave staffLeave) {
+        return this.staffLeaveService.complete(staffLeave);
     }
 
     @ApiOperation("撤销请假")
     @PostMapping("/cancel")
+    @PreAuthorize("hasAnyAuthority('performance:leave:cancel')")
     public ResponseDTO cancel(@RequestBody StaffLeave staffLeave){
         return this.staffLeaveService.cancel(staffLeave);
     }

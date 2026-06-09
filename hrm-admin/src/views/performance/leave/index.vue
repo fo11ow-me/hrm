@@ -181,7 +181,7 @@ export default {
     },
     handleClaim (row) {
       row.staffLeave.status = row.auditing
-      claim(row.staffLeave, this.staff.code).then(response => {
+      claim(row.staffLeave).then(response => {
         if (response.code === 200) {
           this.$message.success('拾取任务成功！')
           this.search()
@@ -192,7 +192,7 @@ export default {
     },
     handleRevert (row) {
       row.staffLeave.status = row.unaudited
-      revert(row.staffLeave, this.staff.code).then(response => {
+      revert(row.staffLeave).then(response => {
         if (response.code === 200) {
           this.$message.success('归还任务成功！')
           this.search()
@@ -204,7 +204,7 @@ export default {
     approve (row) {
       // 通过
       row.staffLeave.status = row.approve
-      complete(row.staffLeave, this.staff.code).then(response => {
+      complete(row.staffLeave).then(response => {
         if (response.code === 200) {
           this.search()
           this.$message.success('通过！')
@@ -220,7 +220,7 @@ export default {
     },
     reject () {
       this.rejectForm.formData.status = this.row.reject
-      complete(this.rejectForm.formData, this.staff.code).then(response => {
+      complete(this.rejectForm.formData).then(response => {
         if (response.code === 200) {
           this.search()
           this.rejectForm.isShow = false
