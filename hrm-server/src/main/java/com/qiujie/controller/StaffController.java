@@ -102,7 +102,7 @@ public class StaffController {
     }
 
     @ApiOperation("得到员工的角色")
-    @GetMapping("/staff/{id}")
+    @GetMapping("/role/{id}")
     public ResponseDTO queryByStaffId(@PathVariable Integer id) {
         return this.staffRoleService.queryByStaffId(id);
     }

@@ -472,7 +472,7 @@ export default {
       this.$refs.leaveForm.validate(valid => {
         if (valid) {
           this.leaveForm.formData.staffId = this.staff.id
-          apply(this.leaveForm.formData, this.staff.code).then(response => {
+          apply(this.leaveForm.formData).then(response => {
             if (response.code === 200) {
               this.$message.success('提交成功！')
             } else {
@@ -494,7 +494,7 @@ export default {
         if (valid) {
           this.leaveInfoForm.formData.status = this.row.unaudited
           this.leaveInfoForm.formData.auditRemark = ''
-          complete(this.leaveInfoForm.formData, this.staff.code).then(response => {
+          complete(this.leaveInfoForm.formData).then(response => {
             if (response.code === 200) {
               this.$message.success('提交成功！')
               this.leaveInfoForm.isShow = false

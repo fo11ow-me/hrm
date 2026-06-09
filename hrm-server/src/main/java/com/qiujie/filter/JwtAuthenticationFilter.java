@@ -51,33 +51,34 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
             }
         }
-        String username = "";
+        String token = null;
         if (StringUtils.hasText(authorization) && authorization.startsWith("Bearer ")) {
-            String token = authorization.substring(7).trim(); // 截取token
-            if (StringUtils.hasText(token)) {
-                try {
-                    // Refresh Token 不能用于访问 API
-                    if (!JwtUtil.TOKEN_TYPE_ACCESS.equals(JwtUtil.extractTokenType(token))) {
-                        filterChain.doFilter(request, response);
-                        return;
-                    }
-                    username = JwtUtil.extractUsername(token);
-                    if (StringUtils.hasText(username)
-                            && SecurityContextHolder.getContext().getAuthentication() == null) {
-                        // 从 JWT claims 直接构建认证信息，无需查 DB
-                        List<SimpleGrantedAuthority> authorities = JwtUtil.extractPermissions(token).stream()
-                                .map(SimpleGrantedAuthority::new)
-                                .collect(Collectors.toList());
-                        StaffDetails staffDetails = new StaffDetails(
-                                username, "", authorities, true, true, true, true);
-                        UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
-                                staffDetails, null, authorities);
-                        authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                        SecurityContextHolder.getContext().setAuthentication(authToken);
-                    }
-                } catch (Exception e) {
-                    this.logger.warn("JWT 解析失败: " + e.getMessage());
+            token = authorization.substring(7).trim();
+        }
+
+        if (StringUtils.hasText(token)) {
+            try {
+                // Refresh Token 不能用于访问 API
+                if (!JwtUtil.TOKEN_TYPE_ACCESS.equals(JwtUtil.extractTokenType(token))) {
+                    filterChain.doFilter(request, response);
+                    return;
                 }
+                String username = JwtUtil.extractUsername(token);
+                if (StringUtils.hasText(username)
+                        && SecurityContextHolder.getContext().getAuthentication() == null) {
+                    // 从 JWT claims 直接构建认证信息，无需查 DB
+                    List<SimpleGrantedAuthority> authorities = JwtUtil.extractPermissions(token).stream()
+                            .map(SimpleGrantedAuthority::new)
+                            .collect(Collectors.toList());
+                    StaffDetails staffDetails = new StaffDetails(
+                            username, "", authorities, true, true, true, true);
+                    UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                            staffDetails, null, authorities);
+                    authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authToken);
+                }
+            } catch (Exception e) {
+                this.logger.warn("JWT 解析失败: " + e.getMessage());
             }
         }
         filterChain.doFilter(request, response);

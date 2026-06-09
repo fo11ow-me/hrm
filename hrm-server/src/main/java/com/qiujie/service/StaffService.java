@@ -14,9 +14,11 @@ import com.qiujie.mapper.StaffMapper;
 import com.qiujie.util.EasyExcelUtil;
 import com.qiujie.vo.StaffDeptVO;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletResponse;
@@ -26,6 +28,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -39,6 +42,8 @@ import java.util.Map;
 @Service
 public class StaffService extends ServiceImpl<StaffMapper, Staff> {
 
+    @Value("${staff.default-password}")
+    private String defaultPassword;
 
     @Autowired
     private DeptService deptService;
@@ -57,9 +62,17 @@ public class StaffService extends ServiceImpl<StaffMapper, Staff> {
      * @return ResponseDTO
      */
     public ResponseDTO add(Staff staff) {
+        // 必填字段验证
+        if (!StringUtils.hasText(staff.getName())) {
+            return Response.error("员工姓名不能为空");
+        }
+        if (staff.getDeptId() == null) {
+            return Response.error("所属部门不能为空");
+        }
+
         if (save(staff)) {
             // 设置默认密码、工号
-            staff.setPassword(passwordEncoder.encode("123")).setCode("staff_" + staff.getId());
+            staff.setPassword(passwordEncoder.encode(defaultPassword)).setCode("staff_" + staff.getId());
             updateById(staff);
             return Response.success();
         }
@@ -121,7 +134,7 @@ public class StaffService extends ServiceImpl<StaffMapper, Staff> {
         // 分页构造
         IPage<Staff> pageConfig = new Page<>(current, size);
         QueryWrapper<Staff> wrapper = new QueryWrapper<>();
-        if (name != "" && name != null) {
+        if (StringUtils.hasText(name)) {
             wrapper.like("name", name);
         }
         if (birthday != null) {
@@ -135,14 +148,28 @@ public class StaffService extends ServiceImpl<StaffMapper, Staff> {
         }
         IPage<Staff> page = page(pageConfig, wrapper);
         List<Staff> records = page.getRecords();
+
+        // 批量查询部门信息，避免 N+1 查询
+        List<Integer> deptIds = records.stream()
+                .map(Staff::getDeptId)
+                .filter(id -> id != null)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<Integer, Dept> deptMap = new HashMap<>();
+        if (!deptIds.isEmpty()) {
+            List<Dept> depts = this.deptService.listByIds(deptIds);
+            deptMap = depts.stream()
+                    .collect(Collectors.toMap(Dept::getId, dept -> dept));
+        }
+
+        // 组装结果
         List<StaffDeptVO> staffDeptVOList = new ArrayList<>();
         for (Staff record : records) {
-            QueryWrapper<Dept> queryWrapper = new QueryWrapper<>();
-            queryWrapper.eq("id", record.getDeptId());
-            Dept dept = this.deptService.getOne(queryWrapper);
-            // 设置部门和年龄
             StaffDeptVO staffDeptVO = new StaffDeptVO();
-            staffDeptVO.setDeptName(dept.getName());
+            Dept dept = deptMap.get(record.getDeptId());
+            if (dept != null) {
+                staffDeptVO.setDeptName(dept.getName());
+            }
             if (record.getBirthday() != null) {
                 staffDeptVO.setAge(DateUtil.ageOfNow(record.getBirthday()));
             }
@@ -202,7 +229,7 @@ public class StaffService extends ServiceImpl<StaffMapper, Staff> {
             if (!save(staff)) {
                 return Response.error();
             }// 设置默认密码、工号、部门
-            staff.setPassword(passwordEncoder.encode("123")).setCode("staff_" + staff.getId()).setDeptId(13);
+            staff.setPassword(passwordEncoder.encode(defaultPassword)).setCode("staff_" + staff.getId()).setDeptId(13);
             if (!updateById(staff)) {
                 return Response.error();
             }

@@ -13,6 +13,7 @@ import com.qiujie.dto.ResponseDTO;
 import com.qiujie.util.HutoolExcelUtil;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletResponse;
@@ -81,7 +82,7 @@ public class RoleService extends ServiceImpl<RoleMapper, Role> {
     public ResponseDTO list(Integer current, Integer size, String name) {
         IPage<Role> config = new Page<>(current, size);
         QueryWrapper<Role> wrapper = null;
-        if (name != "" && name != null) {
+        if (StringUtils.hasText(name)) {
             wrapper = new QueryWrapper<>();
             wrapper.like("name", name);
         }

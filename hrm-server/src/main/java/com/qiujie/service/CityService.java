@@ -10,6 +10,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -85,7 +86,7 @@ public class CityService extends ServiceImpl<CityMapper, City> {
     public ResponseDTO list(Integer current, Integer size, String name) {
         IPage<City> config = new Page<>(current, size);
         QueryWrapper<City> wrapper = null;
-        if (name != "" && name != null) {
+        if (StringUtils.hasText(name)) {
             wrapper = new QueryWrapper<>();
             wrapper.like("name", name);
         }

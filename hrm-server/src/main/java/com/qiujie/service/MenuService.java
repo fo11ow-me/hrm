@@ -12,6 +12,7 @@ import com.qiujie.util.HutoolExcelUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletResponse;
@@ -103,7 +104,7 @@ public class MenuService extends ServiceImpl<MenuMapper, Menu> {
     public ResponseDTO list(Integer current, Integer size, String name) {
         IPage<Menu> config = new Page<>(current, size);
         QueryWrapper<Menu> wrapper = new QueryWrapper<>();
-        if (name != "" && name != null) {
+        if (StringUtils.hasText(name)) {
             wrapper.like("name", name);
         }
         wrapper.eq("level", 0);

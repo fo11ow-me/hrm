@@ -87,6 +87,7 @@ public class LoginController {
             List<Menu> menus = menuMapper.queryPermission(staffId);
             String permissions = menus.stream()
                     .map(Menu::getPermission)
+                    .filter(p -> p != null && !p.isEmpty())
                     .collect(Collectors.joining(","));
 
             String newAccessToken = JwtUtil.generateAccessToken(staffId, permissions, username);
