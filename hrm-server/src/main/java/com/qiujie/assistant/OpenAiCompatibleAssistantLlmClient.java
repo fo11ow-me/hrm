@@ -2,6 +2,9 @@ package com.qiujie.assistant;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qiujie.exception.ServiceException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -19,6 +22,8 @@ import java.util.Map;
 
 @Component
 public class OpenAiCompatibleAssistantLlmClient implements AssistantLlmClient {
+
+    private static final Logger log = LoggerFactory.getLogger(OpenAiCompatibleAssistantLlmClient.class);
 
     private final AssistantProperties properties;
     private final RestTemplate restTemplate;
@@ -90,14 +95,56 @@ public class OpenAiCompatibleAssistantLlmClient implements AssistantLlmClient {
 
     private String extractContent(String body) {
         if (!StringUtils.hasText(body)) {
+            log.warn("LLM response body is empty");
             return "";
         }
         try {
             JsonNode root = objectMapper.readTree(body);
-            JsonNode content = root.path("choices").path(0).path("message").path("content");
-            return content.isMissingNode() ? "" : content.asText("");
+
+            // 检查 API 错误响应
+            if (root.has("error")) {
+                JsonNode error = root.path("error");
+                String errorType = error.path("type").asText("unknown");
+                String errorMsg = error.path("message").asText("Unknown error");
+
+                log.error("LLM API error: type={}, message={}", errorType, errorMsg);
+
+                // 根据错误类型返回不同的提示
+                if ("insufficient_quota".equals(errorType) || "rate_limit_exceeded".equals(errorType)) {
+                    throw new ServiceException("AI 服务配额不足或请求过于频繁，请稍后再试");
+                } else if ("invalid_api_key".equals(errorType)) {
+                    throw new ServiceException("AI 服务配置错误，请联系管理员");
+                } else {
+                    throw new ServiceException("AI 服务暂时不可用: " + errorMsg);
+                }
+            }
+
+            // 提取正常响应内容
+            JsonNode choices = root.path("choices");
+            if (choices.isMissingNode() || !choices.isArray() || choices.size() == 0) {
+                log.warn("LLM response missing choices field: {}", body);
+                return "";
+            }
+
+            JsonNode content = choices.path(0).path("message").path("content");
+            if (content.isMissingNode()) {
+                log.warn("LLM response missing content field: {}", body);
+                return "";
+            }
+
+            String result = content.asText("");
+            log.debug("LLM generated {} characters", result.length());
+            return result;
+
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse LLM response: {}", body, e);
+            throw new ServiceException("AI 服务响应格式错误");
+        } catch (ServiceException e) {
+            // 重新抛出业务异常
+            throw e;
         } catch (Exception e) {
-            return "";
+            log.error("Unexpected error parsing LLM response", e);
+            throw new ServiceException("AI 服务响应处理失败");
         }
     }
 }

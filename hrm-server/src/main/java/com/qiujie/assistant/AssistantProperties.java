@@ -1,19 +1,28 @@
 package com.qiujie.assistant;
 
 import lombok.Data;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+
+import javax.annotation.PostConstruct;
 
 @Data
 @Component
 @ConfigurationProperties(prefix = "assistant")
 public class AssistantProperties {
 
+    private static final Logger log = LoggerFactory.getLogger(AssistantProperties.class);
+
     private boolean enabled = true;
 
     private int timeoutSeconds = 15;
 
     private int retentionDays = 30;
+
+    private int dailyQuota = 50; // 每日查询配额
 
     private Provider provider = new Provider();
 
@@ -22,5 +31,44 @@ public class AssistantProperties {
         private String baseUrl = "";
         private String apiKey = "";
         private String model = "";
+    }
+
+    /**
+     * 启动时验证配置安全性
+     */
+    @PostConstruct
+    public void validate() {
+        if (!enabled) {
+            log.info("Assistant service is disabled");
+            return;
+        }
+
+        Provider provider = getProvider();
+
+        // 强制要求配置 API Key
+        if (!StringUtils.hasText(provider.getApiKey())) {
+            throw new IllegalStateException("assistant.provider.api-key must be configured when assistant is enabled");
+        }
+
+        // 检测硬编码的 API Key
+        String apiKey = provider.getApiKey();
+        if (apiKey.startsWith("sk-") && !apiKey.contains("${") && !apiKey.contains("{{")) {
+            log.warn("⚠️  SECURITY WARNING: API Key appears to be hardcoded in configuration file!");
+            log.warn("    Please use environment variable instead:");
+            log.warn("    assistant.provider.api-key=${ASSISTANT_API_KEY}");
+            log.warn("    Never commit API keys to version control!");
+        }
+
+        // 验证其他配置
+        if (!StringUtils.hasText(provider.getBaseUrl())) {
+            throw new IllegalStateException("assistant.provider.base-url must be configured");
+        }
+
+        if (!StringUtils.hasText(provider.getModel())) {
+            throw new IllegalStateException("assistant.provider.model must be configured");
+        }
+
+        log.info("Assistant service configured successfully: baseUrl={}, model={}, quota={}/day",
+                 provider.getBaseUrl(), provider.getModel(), dailyQuota);
     }
 }

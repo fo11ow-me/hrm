@@ -391,34 +391,63 @@ public class AssistantService {
     }
 
     private String detectIntent(String question) {
-        if (isForbiddenQuestion(question)) {
+        // 输入清洗：移除注入关键词
+        String sanitized = sanitizeQuestion(question);
+
+        if (isForbiddenQuestion(sanitized)) {
             return "FORBIDDEN";
         }
-        if (containsAny(question, "怎么", "如何", "帮助", "导入", "导出", "上传", "下载", "审批", "菜单")) {
+        if (containsAny(sanitized, "怎么", "如何", "帮助", "导入", "导出", "上传", "下载", "审批", "菜单")) {
             return "SYSTEM_HELP";
         }
-        if (containsAny(question, "考勤", "迟到", "早退", "旷工", "出勤")) {
+        if (containsAny(sanitized, "考勤", "迟到", "早退", "旷工", "出勤")) {
             return "ATTENDANCE";
         }
-        if (containsAny(question, "请假", "休假", "假期")) {
+        if (containsAny(sanitized, "请假", "休假", "假期")) {
             return "LEAVE";
         }
-        if (containsAny(question, "加班", "调休")) {
+        if (containsAny(sanitized, "加班", "调休")) {
             return "OVERTIME";
         }
-        if (containsAny(question, "工资", "薪资", "薪水")) {
+        if (containsAny(sanitized, "工资", "薪资", "薪水")) {
             return "SALARY";
         }
-        if (containsAny(question, "档案", "个人信息", "我是谁", "我的信息")) {
+        if (containsAny(sanitized, "档案", "个人信息", "我是谁", "我的信息")) {
             return "PROFILE";
         }
         return "UNKNOWN";
     }
 
+    /**
+     * 清洗用户输入,移除可能的注入关键词
+     */
+    private String sanitizeQuestion(String question) {
+        if (question == null) {
+            return "";
+        }
+
+        // 移除可能用于绕过检测的注入关键词
+        String sanitized = question
+            .replaceAll("(\\(.*我的.*\\))", "")  // 移除 "(这是我的...)"
+            .replaceAll("(\\（.*本人.*\\）)", "") // 移除 "（这是本人...）"
+            .trim();
+
+        // 如果清洗后问题太短,返回原文
+        if (sanitized.length() < 3) {
+            return question;
+        }
+
+        return sanitized;
+    }
+
     private boolean isForbiddenQuestion(String question) {
         boolean asksOtherPeople = containsAny(question, "张三", "李四", "王五", "其他员工", "别人", "他人", "某个员工");
         boolean asksAggregate = containsAny(question, "全公司", "所有人", "全部员工", "部门统计", "部门考勤", "部门薪资", "排名");
-        boolean ownScope = containsAny(question, "我", "我的", "本人", "自己");
+
+        // 更严格的范围检测：只有明确包含"我"相关词汇才允许
+        boolean ownScope = containsAny(question, "我的", "本人", "自己");
+
+        // 如果询问其他人或聚合数据,且未明确限定为"我的",则禁止
         return asksOtherPeople || (asksAggregate && !ownScope);
     }
 
