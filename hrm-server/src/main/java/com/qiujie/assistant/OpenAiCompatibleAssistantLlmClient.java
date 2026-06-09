@@ -1,5 +1,6 @@
 package com.qiujie.assistant;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qiujie.exception.ServiceException;
@@ -111,11 +112,11 @@ public class OpenAiCompatibleAssistantLlmClient implements AssistantLlmClient {
 
                 // 根据错误类型返回不同的提示
                 if ("insufficient_quota".equals(errorType) || "rate_limit_exceeded".equals(errorType)) {
-                    throw new ServiceException("AI 服务配额不足或请求过于频繁，请稍后再试");
+                    throw new ServiceException(500, "AI 服务配额不足或请求过于频繁，请稍后再试");
                 } else if ("invalid_api_key".equals(errorType)) {
-                    throw new ServiceException("AI 服务配置错误，请联系管理员");
+                    throw new ServiceException(500, "AI 服务配置错误，请联系管理员");
                 } else {
-                    throw new ServiceException("AI 服务暂时不可用: " + errorMsg);
+                    throw new ServiceException(500, "AI 服务暂时不可用: " + errorMsg);
                 }
             }
 
@@ -138,13 +139,13 @@ public class OpenAiCompatibleAssistantLlmClient implements AssistantLlmClient {
 
         } catch (JsonProcessingException e) {
             log.error("Failed to parse LLM response: {}", body, e);
-            throw new ServiceException("AI 服务响应格式错误");
+            throw new ServiceException(500, "AI 服务响应格式错误");
         } catch (ServiceException e) {
             // 重新抛出业务异常
             throw e;
         } catch (Exception e) {
             log.error("Unexpected error parsing LLM response", e);
-            throw new ServiceException("AI 服务响应处理失败");
+            throw new ServiceException(500, "AI 服务响应处理失败");
         }
     }
 }

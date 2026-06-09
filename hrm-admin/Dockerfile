@@ -4,7 +4,8 @@ WORKDIR /workspace
 ARG VUE_APP_BASE_API=/api
 ENV VUE_APP_BASE_API=${VUE_APP_BASE_API}
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
 
 COPY . .
 RUN npm run build

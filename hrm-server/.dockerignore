@@ -1,4 +1,5 @@
 target
+!target/*.jar
 .git
 .github
 .env

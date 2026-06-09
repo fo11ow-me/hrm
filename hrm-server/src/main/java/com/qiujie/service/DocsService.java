@@ -44,8 +44,11 @@ import java.util.Set;
 @Service
 public class DocsService extends ServiceImpl<DocsMapper, Docs> {
 
-    @Value("${file-path}") // 引入文件上传与下载的路径
+    @Value("${file-path}")
     private String filePath;
+
+    @Autowired
+    private OssService ossService;
 
     @Autowired
     private DocsMapper docsMapper;
@@ -74,11 +77,6 @@ public class DocsService extends ServiceImpl<DocsMapper, Docs> {
      * @throws IOException
      */
     public ResponseDTO upload(MultipartFile uploadFile, Integer id) throws IOException {
-        File fold = new File(filePath);
-        // 若存储上传文件的文件夹不存在，则创建
-        if (!fold.exists()) {
-            fold.mkdirs();
-        }
         // 判断上传的文件是否为空
         if (uploadFile.isEmpty()) {
             return Response.error(BusinessStatusEnum.FILE_NOT_EXIST);
@@ -104,11 +102,26 @@ public class DocsService extends ServiceImpl<DocsMapper, Docs> {
         // 若文件已经存在，则不用上传
         if (!docsList.isEmpty()) {
             filename = docsList.get(0).getName();
+            // 如果启用了 OSS 但文件不在 OSS，则补传（兼容迁移前数据）
+            if (ossService != null && ossService.isEnabled() && !ossService.exists(filename)) {
+                try {
+                    ossService.put(filename, uploadFile.getInputStream(), uploadFile.getContentType());
+                } catch (Exception e) {
+                    throw new ServiceException(BusinessStatusEnum.FILE_UPLOAD_ERROR);
+                }
+            }
         } else {
             try {
-                File file = new File(filePath, filename);
-                // 将文件存储到磁盘
-                uploadFile.transferTo(file);
+                if (ossService != null && ossService.isEnabled()) {
+                    ossService.put(filename, uploadFile.getInputStream(), uploadFile.getContentType());
+                } else {
+                    File fold = new File(filePath);
+                    if (!fold.exists()) {
+                        fold.mkdirs();
+                    }
+                    File file = new File(filePath, filename);
+                    uploadFile.transferTo(file);
+                }
             } catch (Exception e) {
                 throw new ServiceException(BusinessStatusEnum.FILE_UPLOAD_ERROR);
             }
@@ -137,18 +150,30 @@ public class DocsService extends ServiceImpl<DocsMapper, Docs> {
      * @throws IOException
      */
     public void download(String filename, HttpServletResponse response) throws IOException {
-        File file = resolveStoredFile(filename);
-        if (file == null || !file.exists() || !file.isFile()) {
-            response.sendError(HttpServletResponse.SC_NOT_FOUND);
-            return;
-        }
-        if (file.exists()) {
-            // 通知浏览器以下载的方式打开
-            response.addHeader("Content-Type", "application/octet-stream;charset=utf-8");
-            response.addHeader("Content-Disposition", "attachment;filename=" + URLEncoder.encode(filename, StandardCharsets.UTF_8));
-            // 通过文件流读取文件
+        response.addHeader("Content-Type", "application/octet-stream;charset=utf-8");
+        response.addHeader("Content-Disposition", "attachment;filename=" + URLEncoder.encode(filename, StandardCharsets.UTF_8));
+
+        if (ossService != null && ossService.isEnabled()) {
+            if (!ossService.exists(filename)) {
+                response.sendError(HttpServletResponse.SC_NOT_FOUND);
+                return;
+            }
+            try (InputStream in = ossService.get(filename);
+                 OutputStream out = response.getOutputStream()) {
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, len);
+                }
+                out.flush();
+            }
+        } else {
+            File file = resolveStoredFile(filename);
+            if (file == null || !file.exists() || !file.isFile()) {
+                response.sendError(HttpServletResponse.SC_NOT_FOUND);
+                return;
+            }
             OutputStream out = response.getOutputStream();
-            // 读取文件的字节流
             out.write(FileUtil.readBytes(file));
             out.flush();
             out.close();

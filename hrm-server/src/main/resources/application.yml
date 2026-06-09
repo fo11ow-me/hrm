@@ -67,6 +67,12 @@ management:
 
 file-path: ${FILE_STORAGE_PATH:/opt/app/hrm/files}
 
+oss:
+  endpoint: ${OSS_ENDPOINT:}
+  access-key-id: ${OSS_ACCESS_KEY_ID:}
+  access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
+  bucket-name: ${OSS_BUCKET_NAME:}
+
 jwt:
   secret: ${JWT_SECRET}
 

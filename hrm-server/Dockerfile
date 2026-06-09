@@ -1,15 +1,22 @@
-FROM maven:3.9.9-eclipse-temurin-17 AS build
+# 阶段1：Maven 构建
+FROM maven:3.9-eclipse-temurin-17 AS build
 
 WORKDIR /workspace
+
 COPY pom.xml .
-RUN mvn -B -DskipTests dependency:go-offline
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn dependency:go-offline -B
 
 COPY src ./src
-RUN mvn -B -DskipTests package
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn package -DskipTests -B
 
+# 阶段2：运行时
 FROM eclipse-temurin:17-jre-jammy
 
-RUN apt-get update \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
     && apt-get install --no-install-recommends -y curl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system app \

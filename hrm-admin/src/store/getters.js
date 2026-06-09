@@ -12,5 +12,8 @@ export const getters = {
     return null
   },
   tagList: state => state.tag.tagList,
-  isAuth: state => state.token.isAuth
+  isAuth: state => state.token.isAuth,
+  // httpOnly Cookie 中 token 对 JS 不可读，返回空字符串避免
+  // el-upload 组件的 Authorization header 干扰 cookie 认证
+  token: () => ''
 }

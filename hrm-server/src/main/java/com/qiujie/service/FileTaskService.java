@@ -30,6 +30,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -47,6 +48,9 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
 
     @Value("${file-path}")
     private String filePath;
+
+    @Autowired
+    private OssService ossService;
 
     @Autowired
     private FileTaskMapper fileTaskMapper;
@@ -249,19 +253,38 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
             response.sendError(HttpServletResponse.SC_NOT_FOUND);
             return;
         }
+        String downloadName = fileTask.getFileName();
+        if (TaskFileTypeEnum.ERROR.getValue().equalsIgnoreCase(fileType)) {
+            downloadName = "import-errors.xlsx";
+        } else if (downloadName == null || "".equals(downloadName)) {
+            downloadName = fileTask.getFileName();
+        }
+        response.addHeader("Content-Type", "application/octet-stream;charset=utf-8");
+        response.addHeader("Content-Disposition", "attachment;filename=" + URLEncoder.encode(downloadName != null ? downloadName : "download", StandardCharsets.UTF_8));
+
+        if (ossService != null && ossService.isEnabled()) {
+            String ossKey = extractOssKey(path);
+            if (!ossService.exists(ossKey)) {
+                response.sendError(HttpServletResponse.SC_NOT_FOUND);
+                return;
+            }
+            try (InputStream in = ossService.get(ossKey);
+                 OutputStream out = response.getOutputStream()) {
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, len);
+                }
+                out.flush();
+            }
+            return;
+        }
+
         File file = new File(path);
         if (!file.exists() || !file.isFile()) {
             response.sendError(HttpServletResponse.SC_NOT_FOUND);
             return;
         }
-        String downloadName = fileTask.getFileName();
-        if (TaskFileTypeEnum.ERROR.getValue().equalsIgnoreCase(fileType)) {
-            downloadName = "import-errors.xlsx";
-        } else if (downloadName == null || "".equals(downloadName)) {
-            downloadName = file.getName();
-        }
-        response.addHeader("Content-Type", "application/octet-stream;charset=utf-8");
-        response.addHeader("Content-Disposition", "attachment;filename=" + URLEncoder.encode(downloadName, StandardCharsets.UTF_8));
         try (FileInputStream inputStream = new FileInputStream(file);
              OutputStream outputStream = response.getOutputStream()) {
             byte[] buffer = new byte[8192];
@@ -271,6 +294,19 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
             }
             outputStream.flush();
         }
+    }
+
+    private String extractOssKey(String path) {
+        if (path == null) return null;
+        int idx = path.lastIndexOf('/');
+        if (idx >= 0) {
+            return path.substring(idx + 1);
+        }
+        idx = path.lastIndexOf('\\');
+        if (idx >= 0) {
+            return path.substring(idx + 1);
+        }
+        return path;
     }
 
     private String resolveDownloadPath(FileTask fileTask, String fileType) {
@@ -301,6 +337,13 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
 
     private void deleteIfExists(String path) {
         if (path == null || "".equals(path)) {
+            return;
+        }
+        if (ossService != null && ossService.isEnabled()) {
+            String key = extractOssKey(path);
+            if (ossService.exists(key)) {
+                ossService.delete(key);
+            }
             return;
         }
         File file = new File(path);
