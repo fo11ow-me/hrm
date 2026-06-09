@@ -77,7 +77,6 @@ public class SalaryDeductController {
 
     @ApiOperation("获取所有")
     @GetMapping("/all")
-    @PreAuthorize("hasAnyAuthority('money:salary-deduct:query')")
     public ResponseDTO queryAll() {
         return this.salaryDeductService.queryAll();
     }
