@@ -1,5 +1,6 @@
 package com.qiujie.controller;
 
+import com.qiujie.annotation.RateLimit;
 import com.qiujie.dto.ResponseDTO;
 import com.qiujie.dto.assistant.AssistantChatRequest;
 import com.qiujie.service.AssistantService;
@@ -22,6 +23,7 @@ public class AssistantController {
 
     @ApiOperation("智能问答")
     @PostMapping("/chat")
+    @RateLimit(value = 10, timeout = 60, type = RateLimit.LimitType.USER)
     public ResponseDTO chat(@RequestBody AssistantChatRequest request) {
         return assistantService.chat(request);
     }

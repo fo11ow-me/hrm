@@ -5,6 +5,7 @@ import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.qiujie.assistant.AssistantLlmClient;
+import com.qiujie.assistant.AssistantProperties;
 import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
 import com.qiujie.dto.assistant.AssistantChatRequest;
@@ -32,12 +33,14 @@ import com.qiujie.vo.StaffDeptVO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -85,6 +88,15 @@ public class AssistantService {
     @Autowired(required = false)
     private AssistantLlmClient llmClient;
 
+    @Autowired
+    private TokenUsageService tokenUsageService;
+
+    @Autowired
+    private AssistantProperties assistantProperties;
+
+    @Autowired(required = false)
+    private StringRedisTemplate redisTemplate;
+
     @Transactional(rollbackFor = Exception.class)
     public ResponseDTO chat(AssistantChatRequest request) {
         String question = request == null ? null : request.getMessage();
@@ -100,6 +112,38 @@ public class AssistantService {
             return Response.error(BusinessStatusEnum.UNAUTHORIZED);
         }
 
+        // 检查每日配额
+        if (tokenUsageService != null && assistantProperties != null) {
+            if (tokenUsageService.isQuotaExceeded(staffId, assistantProperties.getDailyQuota())) {
+                return Response.error("今日查询次数已达上限(" + assistantProperties.getDailyQuota() + "次),请明天再试");
+            }
+        }
+
+        // 尝试从缓存获取答案
+        String cachedAnswer = getCachedAnswer(question);
+        if (cachedAnswer != null) {
+            log.info("Cache hit for question: {}", question);
+
+            // 仍然保存会话记录
+            String intent = detectIntent(question);
+            AssistantConversation conversation = getOrCreateConversation(request, staffId, question);
+            AssistantMessage userMessage = saveMessage(conversation.getId(), staffId, "USER", question, intent, null);
+            saveMessage(conversation.getId(), staffId, "ASSISTANT", cachedAnswer, intent, null);
+            updateConversation(conversation);
+
+            // 记录使用量(缓存命中也计入配额)
+            if (tokenUsageService != null) {
+                tokenUsageService.recordUsage(staffId, question.length(), cachedAnswer.length());
+            }
+
+            AssistantChatResponse response = new AssistantChatResponse()
+                    .setConversationId(conversation.getId())
+                    .setIntent(intent)
+                    .setAnswer(cachedAnswer)
+                    .setSuggestions(buildSuggestions(intent));
+            return Response.success(response);
+        }
+
         String intent = detectIntent(question);
         AssistantConversation conversation = getOrCreateConversation(request, staffId, question);
         AssistantMessage userMessage = saveMessage(conversation.getId(), staffId, "USER", question, intent, null);
@@ -110,6 +154,14 @@ public class AssistantService {
                 toolResult.intent, JSON.toJSONString(toolResult.references));
         updateConversation(conversation);
 
+        // 缓存答案
+        cacheAnswer(question, answer);
+
+        // 记录使用量
+        if (tokenUsageService != null) {
+            tokenUsageService.recordUsage(staffId, question.length(), answer.length());
+        }
+
         AssistantChatResponse response = new AssistantChatResponse()
                 .setConversationId(conversation.getId())
                 .setIntent(toolResult.intent)
@@ -117,6 +169,53 @@ public class AssistantService {
                 .setReferences(toolResult.references)
                 .setSuggestions(buildSuggestions(toolResult.intent));
         return Response.success(response);
+    }
+
+    /**
+     * 尝试从缓存获取相似问题的答案
+     */
+    private String getCachedAnswer(String question) {
+        if (redisTemplate == null) {
+            return null;
+        }
+
+        String intent = detectIntent(question);
+        String normalizedQuestion = normalizeQuestion(question);
+        String cacheKey = "assistant:cache:" + intent + ":" + normalizedQuestion.hashCode();
+
+        return redisTemplate.opsForValue().get(cacheKey);
+    }
+
+    /**
+     * 缓存问题和答案
+     */
+    private void cacheAnswer(String question, String answer) {
+        if (redisTemplate == null || !StringUtils.hasText(answer)) {
+            return;
+        }
+
+        String intent = detectIntent(question);
+        String normalizedQuestion = normalizeQuestion(question);
+        String cacheKey = "assistant:cache:" + intent + ":" + normalizedQuestion.hashCode();
+
+        // 缓存 24 小时
+        redisTemplate.opsForValue().set(cacheKey, answer, Duration.ofHours(24));
+        log.debug("Cached answer for question: {}", question);
+    }
+
+    /**
+     * 标准化问题(用于缓存键)
+     */
+    private String normalizeQuestion(String question) {
+        if (question == null) {
+            return "";
+        }
+
+        // 移除多余空格和标点
+        return question.trim()
+                      .replaceAll("\\s+", " ")
+                      .replaceAll("[？?！!。，,]", "")
+                      .toLowerCase();
     }
 
     public ResponseDTO listConversations() {
@@ -135,10 +234,16 @@ public class AssistantService {
         if (staffId == null) {
             return Response.error(BusinessStatusEnum.UNAUTHORIZED);
         }
+
         AssistantConversation conversation = conversationMapper.selectById(id);
+
+        // 统一错误消息,防止会话枚举
         if (conversation == null || !staffId.equals(conversation.getStaffId())) {
-            return Response.error("会话不存在或无权访问");
+            log.warn("Unauthorized conversation access attempt: staffId={}, conversationId={}",
+                     staffId, id);
+            return Response.error("会话不存在");
         }
+
         Map<String, Object> data = new HashMap<>();
         data.put("conversation", conversation);
         data.put("messages", messageMapper.selectList(new QueryWrapper<AssistantMessage>()
@@ -154,10 +259,16 @@ public class AssistantService {
         if (staffId == null) {
             return Response.error(BusinessStatusEnum.UNAUTHORIZED);
         }
+
         AssistantConversation conversation = conversationMapper.selectById(id);
+
+        // 统一错误消息,防止会话枚举
         if (conversation == null || !staffId.equals(conversation.getStaffId())) {
-            return Response.error("会话不存在或无权删除");
+            log.warn("Unauthorized conversation deletion attempt: staffId={}, conversationId={}",
+                     staffId, id);
+            return Response.error("会话不存在");
         }
+
         conversationMapper.deleteById(id);
         messageMapper.delete(new QueryWrapper<AssistantMessage>().eq("conversation_id", id).eq("staff_id", staffId));
         toolCallMapper.delete(new QueryWrapper<AssistantToolCall>().eq("conversation_id", id).eq("staff_id", staffId));
