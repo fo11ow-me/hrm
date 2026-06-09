@@ -34,6 +34,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         // 三层回退获取 token: Header（正常请求）→ Query Param（SSE）→ Cookie（httpOnly）
         String authorization = request.getHeader("Authorization");
+        // 允许 Header 中仅包含 "Bearer " 前缀（即无实际 token），此时忽略 Header 以便回退到 Cookie
+        if (StringUtils.hasText(authorization) && authorization.startsWith("Bearer ")) {
+            String possibleToken = authorization.substring(7).trim();
+            if (!StringUtils.hasText(possibleToken)) {
+                authorization = "";
+            }
+        }
         if (!StringUtils.hasText(authorization)) {
             String tokenParam = request.getParameter("token");
             if (StringUtils.hasText(tokenParam)) {
