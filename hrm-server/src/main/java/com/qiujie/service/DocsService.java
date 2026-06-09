@@ -34,6 +34,7 @@ import java.rmi.ServerException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * @Author qiujie
@@ -48,6 +49,21 @@ public class DocsService extends ServiceImpl<DocsMapper, Docs> {
 
     @Autowired
     private DocsMapper docsMapper;
+
+    /**
+     * 允许上传的文件类型白名单
+     */
+    private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
+        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",  // 文档
+        "jpg", "jpeg", "png", "gif", "bmp", "svg",           // 图片
+        "txt", "csv", "xml", "json",                         // 文本
+        "zip", "rar", "7z", "tar", "gz"                      // 压缩包
+    );
+
+    /**
+     * 最大文件大小 (20MB)
+     */
+    private static final long MAX_FILE_SIZE = 20 * 1024 * 1024;
 
     /**
      * document upload
@@ -67,8 +83,20 @@ public class DocsService extends ServiceImpl<DocsMapper, Docs> {
         if (uploadFile.isEmpty()) {
             return Response.error(BusinessStatusEnum.FILE_NOT_EXIST);
         }
+
+        // 显式验证文件大小
+        if (uploadFile.getSize() > MAX_FILE_SIZE) {
+            return Response.error("文件大小超过限制，最大允许 20MB");
+        }
+
         String originalFilename = uploadFile.getOriginalFilename(); // 获取文件的原名称
         String extName = FileUtil.extName(originalFilename); // 获取文件的后缀名
+
+        // 文件类型白名单验证
+        if (!ALLOWED_EXTENSIONS.contains(extName.toLowerCase())) {
+            return Response.error("不支持的文件类型: " + extName);
+        }
+
         String filename = IdUtil.fastSimpleUUID().substring(2, 22) + "." + extName; // 文件名
         // 获取文件的md5信息
         String md5 = SecureUtil.md5(uploadFile.getInputStream());
