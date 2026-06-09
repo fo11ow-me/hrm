@@ -6,6 +6,7 @@ node_modules
 **/node_modules
 **/.git
 **/dist
+!hrm-admin/dist
 *.log
 *.md
 *.key
