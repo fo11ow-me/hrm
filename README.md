@@ -96,10 +96,6 @@ hrm/
 │   │   ├── utils/             # 工具函数
 │   │   └── assets/            # 静态资源
 │   └── public/                # 公共资源
-├── deploy/                    # 部署配置
-│   ├── docker-compose.prod.yml    # 生产环境 Compose
-│   ├── nginx.conf                 # Nginx 配置模板
-│   └── deploy.sh                  # 部署脚本
 ├── hrm.sql                    # 主数据库脚本
 ├── hrm_activiti.sql           # 工作流数据库脚本
 ├── assistant.sql              # LLM 审计表脚本 (可选)
@@ -251,42 +247,6 @@ npm run lint
 
 - 开发环境: `http://localhost:8888/swagger-ui.html`
 - 生产环境: `http://<服务器地址>/swagger-ui.html`
-
-## 🚢 生产部署
-
-### Docker 部署
-
-生产环境镜像发布到 GitHub Container Registry:
-- `ghcr.io/fo11ow-me/hrm-server`
-- `ghcr.io/fo11ow-me/hrm-admin`
-
-详细部署步骤请参考 [`deploy/README.md`](deploy/README.md)
-
-### 部署要求
-
-**服务器准备工作**:
-- 外部管理的 MySQL 和 Redis 服务
-- Nginx 反向代理配置
-- TLS 证书 (由 Certbot 管理)
-- GitHub Container Registry 认证
-
-**必需的 GitHub Secrets**:
-- `DEPLOY_HOST`: 部署服务器地址
-- `DEPLOY_PORT`: SSH 端口
-- `DEPLOY_USER`: 部署账号
-- `DEPLOY_SSH_PRIVATE_KEY`: SSH 私钥
-- `DEPLOY_KNOWN_HOSTS`: 已知主机密钥
-- `DEPLOY_HEALTHCHECK_URL`: 健康检查 URL
-
-**可选的 GitHub Variables**:
-- `DEPLOY_PATH`: 部署目录 (默认: `/opt/hrm`)
-
-### 安全注意事项
-
-- 所有生产凭证通过 GitHub Secrets 或服务器端 `.env` 文件提供
-- TLS 证书由 Certbot 自动管理,保留在服务器上
-- 已在 Git 历史中出现的凭证必须在部署前轮换
-- CI 会拒绝私钥、环境文件、部署包、生产配置文件和数据库导出
 
 ## 🤝 开发指南
 

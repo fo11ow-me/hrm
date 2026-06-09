@@ -255,7 +255,7 @@ public void updatePermissions(Integer staffId, List<String> permissions) {
 
 2. **文件上传路径**
    ```yaml
-   file-path: ${FILE_STORAGE_PATH:/opt/hrm/files}
+   file-path: ${FILE_STORAGE_PATH}
    ```
 
    **风险**:
