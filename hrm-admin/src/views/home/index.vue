@@ -232,7 +232,7 @@ export default {
   computed: {
     ...mapGetters(['staff', 'token']),
     headers () {
-      return { Authorization: 'Bearer ' + this.token }
+      return this.token ? { Authorization: 'Bearer ' + this.token } : {}
     },
     uploadApi () {
       return getUploadApi(this.staff.id)

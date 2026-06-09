@@ -203,7 +203,7 @@ export default {
   computed: {
     ...mapGetters(['token']),
     headers () {
-      return { Authorization: 'Bearer ' + this.token }
+      return this.token ? { Authorization: 'Bearer ' + this.token } : {}
     },
     // 获取导入数据的接口
     importApi () {
