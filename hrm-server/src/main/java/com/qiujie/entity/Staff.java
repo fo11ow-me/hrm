@@ -2,6 +2,7 @@ package com.qiujie.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.alibaba.excel.annotation.ExcelProperty;
 import com.qiujie.enums.GenderEnum;
 import io.swagger.annotations.ApiModel;
@@ -54,6 +55,7 @@ public class Staff implements Serializable {
 
     @ApiModelProperty("员工密码")
     @TableField("pwd")
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
 
     @ApiModelProperty("员工头像")

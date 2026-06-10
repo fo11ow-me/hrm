@@ -320,6 +320,7 @@ public class StaffLeaveService extends ServiceImpl<StaffLeaveMapper, StaffLeave>
             return Response.error(BusinessStatusEnum.UNAUTHORIZED);
         }
 
+        staffLeave.setStatus(AuditStatusEnum.AUDITING);
         if (!updateById(staffLeave)) {
             return Response.error();
         }
@@ -351,6 +352,7 @@ public class StaffLeaveService extends ServiceImpl<StaffLeaveMapper, StaffLeave>
             return Response.error(BusinessStatusEnum.UNAUTHORIZED);
         }
 
+        staffLeave.setStatus(AuditStatusEnum.UNAUDITED);
         if (!updateById(staffLeave)) {
             return Response.error();
         }
@@ -417,6 +419,7 @@ public class StaffLeaveService extends ServiceImpl<StaffLeaveMapper, StaffLeave>
      */
     @Transactional
     public ResponseDTO cancel(StaffLeave staffLeave) {
+        staffLeave.setStatus(AuditStatusEnum.CANCEL);
         if (!updateById(staffLeave)) {
             return Response.error();
         }

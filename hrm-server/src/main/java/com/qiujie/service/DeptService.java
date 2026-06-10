@@ -7,7 +7,9 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
 import com.qiujie.entity.Dept;
+import com.qiujie.entity.Staff;
 import com.qiujie.mapper.DeptMapper;
+import com.qiujie.mapper.StaffMapper;
 import com.qiujie.util.EasyExcelUtil;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,6 +44,9 @@ public class DeptService extends ServiceImpl<DeptMapper, Dept> {
     @Autowired
     private DeptMapper deptMapper;
 
+    @Autowired
+    private StaffMapper staffMapper;
+
     public ResponseDTO add(Dept dept) {
         // 父级部门不需要计算上班时间
         if(dept.getParentId() != 0){
@@ -54,6 +59,16 @@ public class DeptService extends ServiceImpl<DeptMapper, Dept> {
     }
 
     public ResponseDTO delete(Integer id) {
+        // 级联检查：是否存在子部门
+        Long childCount = this.deptMapper.selectCount(new QueryWrapper<Dept>().eq("parent_id", id));
+        if (childCount > 0) {
+            return Response.error("该部门下存在子部门，无法删除");
+        }
+        // 级联检查：是否存在关联员工
+        Long staffCount = this.staffMapper.selectCount(new QueryWrapper<Staff>().eq("dept_id", id));
+        if (staffCount > 0) {
+            return Response.error("该部门下存在员工，无法删除");
+        }
         if (removeById(id)) {
             return Response.success();
         }
@@ -62,6 +77,16 @@ public class DeptService extends ServiceImpl<DeptMapper, Dept> {
 
     @Transactional(rollbackFor = Exception.class)
     public ResponseDTO deleteBatch(List<Integer> ids) {
+        for (Integer id : ids) {
+            Long childCount = this.deptMapper.selectCount(new QueryWrapper<Dept>().eq("parent_id", id));
+            if (childCount > 0) {
+                return Response.error("部门ID=" + id + "下存在子部门，无法删除");
+            }
+            Long staffCount = this.staffMapper.selectCount(new QueryWrapper<Staff>().eq("dept_id", id));
+            if (staffCount > 0) {
+                return Response.error("部门ID=" + id + "下存在员工，无法删除");
+            }
+        }
         if (removeBatchByIds(ids)) {
             return Response.success();
         }

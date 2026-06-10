@@ -15,6 +15,8 @@ import com.qiujie.exception.ServiceException;
 import com.qiujie.mapper.DocsMapper;
 import com.qiujie.util.HutoolExcelUtil;
 import com.qiujie.vo.StaffDocsVO;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -43,6 +45,8 @@ import java.util.Set;
  */
 @Service
 public class DocsService extends ServiceImpl<DocsMapper, Docs> {
+
+    private static final Logger log = LoggerFactory.getLogger(DocsService.class);
 
     @Value("${file-path}")
     private String filePath;
@@ -107,7 +111,9 @@ public class DocsService extends ServiceImpl<DocsMapper, Docs> {
                 try {
                     ossService.put(filename, uploadFile.getInputStream(), uploadFile.getContentType());
                 } catch (Exception e) {
-                    throw new ServiceException(BusinessStatusEnum.FILE_UPLOAD_ERROR);
+                    log.error("OSS文件上传失败, filename={}", filename, e);
+                    throw new ServiceException(BusinessStatusEnum.FILE_UPLOAD_ERROR.getCode(),
+                            BusinessStatusEnum.FILE_UPLOAD_ERROR.getMessage() + ": " + e.getMessage());
                 }
             }
         } else {
@@ -116,14 +122,18 @@ public class DocsService extends ServiceImpl<DocsMapper, Docs> {
                     ossService.put(filename, uploadFile.getInputStream(), uploadFile.getContentType());
                 } else {
                     File fold = new File(filePath);
-                    if (!fold.exists()) {
-                        fold.mkdirs();
+                    if (!fold.exists() && !fold.mkdirs()) {
+                        log.error("文件上传失败: 无法创建目录, filePath={}", filePath);
+                        throw new ServiceException(BusinessStatusEnum.FILE_WRITE_ERROR.getCode(),
+                                "无法创建目录: " + filePath);
                     }
                     File file = new File(filePath, filename);
                     uploadFile.transferTo(file);
                 }
             } catch (Exception e) {
-                throw new ServiceException(BusinessStatusEnum.FILE_UPLOAD_ERROR);
+                log.error("文件上传失败, filePath={}, filename={}", filePath, filename, e);
+                throw new ServiceException(BusinessStatusEnum.FILE_UPLOAD_ERROR.getCode(),
+                        BusinessStatusEnum.FILE_UPLOAD_ERROR.getMessage() + ": " + e.getMessage());
             }
         }
         // 将文件数据保存到数据库

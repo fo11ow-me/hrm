@@ -41,6 +41,8 @@ replay_pid*.log
 
 # Uploaded/runtime files
 file/
+docs/
+*.xlsx
 
 # IDE and agent files
 .idea/
