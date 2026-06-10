@@ -2,6 +2,7 @@ package com.qiujie.service;
 
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.IdUtil;
+import com.alibaba.fastjson.JSON;
 import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.ExcelWriter;
 import com.alibaba.excel.write.metadata.WriteSheet;
@@ -241,16 +242,16 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
     public void download(Long id, String fileType, HttpServletResponse response) throws IOException {
         FileTask fileTask = getById(id);
         if (fileTask == null) {
-            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            writeErrorResponse(response, HttpServletResponse.SC_NOT_FOUND, "任务不存在");
             return;
         }
         if (!canAccess(fileTask)) {
-            response.sendError(HttpServletResponse.SC_FORBIDDEN);
+            writeErrorResponse(response, HttpServletResponse.SC_FORBIDDEN, "无权访问该任务");
             return;
         }
         String path = resolveDownloadPath(fileTask, fileType);
         if (path == null || "".equals(path)) {
-            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            writeErrorResponse(response, HttpServletResponse.SC_NOT_FOUND, "文件不存在");
             return;
         }
         String downloadName = fileTask.getFileName();
@@ -264,25 +265,24 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
 
         if (ossService != null && ossService.isEnabled()) {
             String ossKey = extractOssKey(path);
-            if (!ossService.exists(ossKey)) {
-                response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            if (ossService.exists(ossKey)) {
+                try (InputStream in = ossService.get(ossKey);
+                     OutputStream out = response.getOutputStream()) {
+                    byte[] buffer = new byte[8192];
+                    int len;
+                    while ((len = in.read(buffer)) != -1) {
+                        out.write(buffer, 0, len);
+                    }
+                    out.flush();
+                }
                 return;
             }
-            try (InputStream in = ossService.get(ossKey);
-                 OutputStream out = response.getOutputStream()) {
-                byte[] buffer = new byte[8192];
-                int len;
-                while ((len = in.read(buffer)) != -1) {
-                    out.write(buffer, 0, len);
-                }
-                out.flush();
-            }
-            return;
+            // OSS 未找到时回退到本地文件
         }
 
         File file = new File(path);
         if (!file.exists() || !file.isFile()) {
-            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            writeErrorResponse(response, HttpServletResponse.SC_NOT_FOUND, "文件不存在或已被清理");
             return;
         }
         try (FileInputStream inputStream = new FileInputStream(file);
@@ -350,6 +350,12 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
         if (file.exists() && file.isFile()) {
             file.delete();
         }
+    }
+
+    private void writeErrorResponse(HttpServletResponse response, int status, String message) throws IOException {
+        response.setStatus(status);
+        response.setContentType("application/json;charset=utf-8");
+        response.getWriter().write(JSON.toJSONString(Response.error(message)));
     }
 
     private boolean canAccess(FileTask fileTask) {

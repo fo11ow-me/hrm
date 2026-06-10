@@ -166,6 +166,8 @@ export default {
       downloadFileTask(task.id, fileType).then(response => {
         const filename = fileType === 'ERROR' ? 'import-errors.xlsx' : task.fileName
         write(response, filename)
+      }).catch(() => {
+        // 网络/服务端错误已由 request 拦截器统一提示，此处仅防止未捕获的 rejection
       })
     },
 

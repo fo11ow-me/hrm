@@ -322,7 +322,9 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
     // ==================== 异步导出核心 ====================
     // 委托给 FileTaskEngine 执行，考勤特有的分页查询由 AttendanceExportHandler 提供
     private void runExportTask(Long taskId, String month, String exportName) {
-        fileTaskEngine.runExport(taskId, new AttendanceExportHandler(), month, exportName);
+        FileTask task = fileTaskService.getById(taskId);
+        String queryParamsJson = task != null ? task.getQueryParams() : "{\"month\":\"" + month + "\"}";
+        fileTaskEngine.runExport(taskId, new AttendanceExportHandler(), queryParamsJson, exportName);
     }
 
     // ==================== 批量处理 ====================
