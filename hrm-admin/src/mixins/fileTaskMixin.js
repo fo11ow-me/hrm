@@ -12,7 +12,8 @@ export default {
     return {
       taskList: [],
       taskStatusSnapshot: {},
-      eventSource: null
+      eventSource: null,
+      taskLoading: false
     }
   },
   methods: {
@@ -32,6 +33,7 @@ export default {
      * @param {string} module - 模块标识，如 'ATTENDANCE'、'STAFF'
      */
     loadTasks (module) {
+      this.taskLoading = true
       listFileTask({
         current: 1,
         size: 10,
@@ -45,6 +47,8 @@ export default {
             this.initSnapshot(newList)
           }
         }
+      }).finally(() => {
+        this.taskLoading = false
       })
     },
 

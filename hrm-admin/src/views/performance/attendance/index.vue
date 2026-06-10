@@ -33,7 +33,7 @@
       >
         导出
       </el-button>
-      <el-button size="mini" style="margin-left: 10px" @click="loadTasks">刷新任务</el-button>
+      <el-button size="mini" style="margin-left: 10px" :loading="taskLoading" @click="loadTasks(moduleFilter)">刷新任务</el-button>
     </div>
 
     <file-task-card :task-list="taskList" @download="downloadTask" />

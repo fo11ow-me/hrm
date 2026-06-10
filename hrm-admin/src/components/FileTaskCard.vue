@@ -11,11 +11,21 @@
           <el-tag :type="taskTagType(scope.row.status)">{{ scope.row.status }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="进度" min-width="180">
+      <el-table-column label="进度" min-width="220">
         <template slot-scope="scope">
-          <span>{{ scope.row.processedCount || 0 }}/{{ scope.row.totalCount || 0 }}</span>
-          <span style="margin-left: 8px">成功 {{ scope.row.successCount || 0 }}</span>
-          <span style="margin-left: 8px">失败 {{ scope.row.failCount || 0 }}</span>
+          <el-progress
+            v-if="scope.row.totalCount > 0"
+            :percentage="Math.round((scope.row.processedCount || 0) / scope.row.totalCount * 100)"
+            :status="scope.row.status === 'FAILED' ? 'exception' : scope.row.status === 'SUCCESS' ? 'success' : ''"
+            :stroke-width="14"
+            style="width: 180px"
+          />
+          <span v-else style="color: #909399">处理中...</span>
+          <div style="font-size: 12px; color: #909399; margin-top: 2px">
+            已处理 {{ scope.row.processedCount || 0 }} / {{ scope.row.totalCount || '?' }}
+            <span style="color: #67C23A; margin-left: 6px">{{ scope.row.successCount || 0 }}</span>
+            <span v-if="scope.row.failCount" style="color: #F56C6C; margin-left: 6px">{{ scope.row.failCount }}</span>
+          </div>
         </template>
       </el-table-column>
       <el-table-column prop="fileName" label="文件名" min-width="180" show-overflow-tooltip />
