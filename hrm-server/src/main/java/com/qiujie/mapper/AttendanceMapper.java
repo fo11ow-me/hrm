@@ -10,42 +10,18 @@ import java.sql.Date;
 import java.util.Collection;
 import java.util.List;
 
-/**
- * <p>
- * Mapper 接口
- * </p>
- *
- * @author qiujie
- * @since 2022-03-29
- */
-
 public interface AttendanceMapper extends BaseMapper<Attendance> {
 
+    @Select("select * from att_attendance where is_deleted = 0 and staff_id = #{id} and attendance_date = #{day}")
+    Attendance queryByStaffIdAndDate(@Param("id") Integer id, @Param("day") Date day);
 
-    @Select("select * from att_attendance where is_deleted = 0 and staff_id = #{id} and date_format(attendance_date,'%Y%m%d') = #{day}")
-    Attendance queryByStaffIdAndDate(@Param("id") Integer id, @Param("day") String day);
+    @Select("<script><![CDATA[select count(*) from att_attendance where is_deleted = 0 and staff_id = #{id} and status = #{status} and attendance_date >= #{start} and attendance_date < #{end}]]></script>")
+    Integer countTimes(@Param("id") Integer id, @Param("status") Integer status,
+                       @Param("start") Date start, @Param("end") Date end);
 
-    /**
-     * 统计员工迟到、早退、旷工的次数
-     *
-     * @param id     员工id
-     * @param status
-     * @param month  月份
-     * @return
-     */
-    @Select("select count(*) from att_attendance where is_deleted = 0 and staff_id = #{id} and status = #{status} and date_format(attendance_date,'%Y%m') = #{month} ")
-    Integer countTimes(@Param("id") Integer id, @Param("status") Integer status, @Param("month") String month);
-
-
-    /**
-     * 查找员工休假的日期
-     *
-     * @param id
-     * @param month
-     * @return
-     */
-    @Select("select attendance_date from att_attendance where is_deleted = 0 and staff_id = #{id} and status=#{status} and date_format(attendance_date,'%Y%m') = #{month} ")
-    List<Date> queryLeaveDate(@Param("id") Integer id, @Param("status") Integer status, @Param("month") String month);
+    @Select("<script><![CDATA[select attendance_date from att_attendance where is_deleted = 0 and staff_id = #{id} and status=#{status} and attendance_date >= #{start} and attendance_date < #{end}]]></script>")
+    List<Date> queryLeaveDate(@Param("id") Integer id, @Param("status") Integer status,
+                              @Param("start") Date start, @Param("end") Date end);
 
     @Select({
             "<script>",
@@ -64,34 +40,34 @@ public interface AttendanceMapper extends BaseMapper<Attendance> {
     List<Attendance> queryByStaffIdsAndDates(@Param("staffIds") Collection<Integer> staffIds,
                                              @Param("dates") Collection<Date> dates);
 
-    @Select("select staff_id as staffId, " +
+    @Select("<script><![CDATA[select staff_id as staffId, " +
             "sum(case when status = 1 then 1 else 0 end) as lateTimes, " +
             "sum(case when status = 2 then 1 else 0 end) as leaveEarlyTimes, " +
             "sum(case when status = 3 then 1 else 0 end) as absenteeismTimes, " +
             "sum(case when status = 4 and dayofweek(attendance_date) not in (1,7) then 1 else 0 end) as leaveDays, " +
             "sum(case when status = 5 then 1 else 0 end) as timeOffDays " +
             "from att_attendance " +
-            "where is_deleted = 0 and date_format(attendance_date,'%Y%m') = #{month} " +
-            "group by staff_id")
-    List<AttendanceMonthSummaryVO> queryMonthSummary(@Param("month") String month);
+            "where is_deleted = 0 and attendance_date >= #{start} and attendance_date < #{end} " +
+            "group by staff_id]]></script>")
+    List<AttendanceMonthSummaryVO> queryMonthSummary(@Param("start") Date start, @Param("end") Date end);
 
     @Select({
             "<script>",
-            "select staff_id as staffId, " +
+            "<![CDATA[select staff_id as staffId, " +
             "sum(case when status = 1 then 1 else 0 end) as lateTimes, " +
             "sum(case when status = 2 then 1 else 0 end) as leaveEarlyTimes, " +
             "sum(case when status = 3 then 1 else 0 end) as absenteeismTimes, " +
             "sum(case when status = 4 and dayofweek(attendance_date) not in (1,7) then 1 else 0 end) as leaveDays, " +
             "sum(case when status = 5 then 1 else 0 end) as timeOffDays " +
             "from att_attendance " +
-            "where is_deleted = 0 and date_format(attendance_date,'%Y%m') = #{month} " +
-            "and staff_id in " +
+            "where is_deleted = 0 and attendance_date >= #{start} and attendance_date < #{end} ]]>",
+            "and staff_id in ",
             "<foreach collection='staffIds' item='staffId' open='(' separator=',' close=')'>",
             "#{staffId}",
             "</foreach> " +
             "group by staff_id",
             "</script>"
     })
-    List<AttendanceMonthSummaryVO> queryMonthSummaryByStaffIds(@Param("month") String month, @Param("staffIds") Collection<Integer> staffIds);
-
+    List<AttendanceMonthSummaryVO> queryMonthSummaryByStaffIds(@Param("start") Date start, @Param("end") Date end,
+                                                                @Param("staffIds") Collection<Integer> staffIds);
 }

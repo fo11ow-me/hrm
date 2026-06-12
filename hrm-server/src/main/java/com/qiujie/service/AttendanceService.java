@@ -54,6 +54,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import cn.hutool.core.date.DateTime;
 import cn.hutool.core.date.DateUtil;
 
 @Service
@@ -144,11 +145,26 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
             month = DateUtil.format(new java.util.Date(), "yyyyMM");
         }
         String[] monthDayList = this.datetimeUtil.getMonthDayList(month);
+
+        // 批量加载：一次 SQL 查所有员工 x 所有日期
+        List<Integer> staffIds = staffDeptVOList.stream().map(StaffAttendanceVO::getStaffId).collect(Collectors.toList());
+        List<Date> dates = new ArrayList<>();
+        for (String day : monthDayList) {
+            dates.add(DateUtil.parse(day, "yyyyMMdd").toSqlDate());
+        }
+        Map<String, Attendance> attendanceMap = new HashMap<>();
+        if (!staffIds.isEmpty() && !dates.isEmpty()) {
+            List<Attendance> attendances = this.attendanceMapper.queryByStaffIdsAndDates(staffIds, dates);
+            for (Attendance a : attendances) {
+                attendanceMap.put(a.getStaffId() + "_" + DateUtil.format(a.getAttendanceDate(), "yyyyMMdd"), a);
+            }
+        }
+
         for (StaffAttendanceVO staffDeptVO : staffDeptVOList) {
             List<HashMap<String, Object>> list = new ArrayList<>();
             for (String day : monthDayList) {
                 HashMap<String, Object> map = new HashMap<>();
-                Attendance attendance = this.attendanceMapper.queryByStaffIdAndDate(staffDeptVO.getStaffId(), day);
+                Attendance attendance = attendanceMap.get(staffDeptVO.getStaffId() + "_" + day);
                 if (attendance == null) {
                     Date date = DateUtil.parse(day, "yyyyMMdd").toSqlDate();
                     if (DateUtil.isWeekend(date) || this.datetimeUtil.isHoliday(date)) {
@@ -181,6 +197,9 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
         response.setContentType("application/vnd.ms-excel;charset=utf-8");
         response.setHeader("Content-Disposition",
                 "attachment;filename=" + java.net.URLEncoder.encode(filename, java.nio.charset.StandardCharsets.UTF_8) + ".xlsx");
+        DateTime dt = DateUtil.parse(month, "yyyyMM");
+        Date exportStart = dt.toSqlDate();
+        Date exportEnd = DateUtil.offsetMonth(dt, 1).toSqlDate();
         ExcelWriter excelWriter = EasyExcel.write(response.getOutputStream(), AttendanceMonthVO.class).build();
         WriteSheet writeSheet = EasyExcel.writerSheet("attendance").build();
         try {
@@ -199,7 +218,7 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
                         .collect(Collectors.toList());
                 Map<Integer, AttendanceMonthSummaryVO> summaryMap = new HashMap<>();
                 if (!staffIds.isEmpty()) {
-                    summaryMap = this.attendanceMapper.queryMonthSummaryByStaffIds(month, staffIds).stream()
+                    summaryMap = this.attendanceMapper.queryMonthSummaryByStaffIds(exportStart, exportEnd, staffIds).stream()
                             .collect(Collectors.toMap(AttendanceMonthSummaryVO::getStaffId, item -> item));
                 }
                 for (AttendanceMonthVO vo : list) {
@@ -306,7 +325,8 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
     }
 
     public ResponseDTO queryByStaffIdAndDate(Integer id, String date) {
-        Attendance attendance = this.attendanceMapper.queryByStaffIdAndDate(id, date.replace("-", ""));
+        Date sqlDate = DateUtil.parse(date.replace("-", ""), "yyyyMMdd").toSqlDate();
+        Attendance attendance = this.attendanceMapper.queryByStaffIdAndDate(id, sqlDate);
         if (attendance != null) {
             return Response.success(attendance);
         }
@@ -646,6 +666,9 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
         @Override
         public IPage<AttendanceMonthVO> queryPage(int current, int pageSize, String queryParamsJson) {
             String month = parseMonth(queryParamsJson);
+            DateTime dt = DateUtil.parse(month, "yyyyMM");
+            Date rangeStart = dt.toSqlDate();
+            Date rangeEnd = DateUtil.offsetMonth(dt, 1).toSqlDate();
             IPage<AttendanceMonthVO> page = new Page<>(current, pageSize);
             page = AttendanceService.this.staffMapper.queryAttendanceMonthVOPage(page);
             List<AttendanceMonthVO> list = page.getRecords();
@@ -654,7 +677,7 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
                         .map(AttendanceMonthVO::getStaffId)
                         .collect(Collectors.toList());
                 Map<Integer, AttendanceMonthSummaryVO> summaryMap = AttendanceService.this.attendanceMapper
-                        .queryMonthSummaryByStaffIds(month, staffIds).stream()
+                        .queryMonthSummaryByStaffIds(rangeStart, rangeEnd, staffIds).stream()
                         .collect(Collectors.toMap(AttendanceMonthSummaryVO::getStaffId, item -> item));
                 for (AttendanceMonthVO vo : list) {
                     AttendanceMonthSummaryVO summary = summaryMap.get(vo.getStaffId());

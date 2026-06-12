@@ -14,6 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 /**
  * <p>
@@ -109,8 +110,10 @@ public class StaffController {
 
 
     @ApiOperation("检查员工的密码")
-    @GetMapping("/{pwd}/{id}")
-    public ResponseDTO validate(@PathVariable String pwd, @PathVariable Integer id) {
+    @PostMapping("/validate-password")
+    public ResponseDTO validate(@RequestBody Map<String, Object> body) {
+        String pwd = (String) body.get("password");
+        Integer id = body.get("id") != null ? Integer.valueOf(body.get("id").toString()) : null;
         return this.staffService.validate(pwd, id);
     }
 

@@ -1,5 +1,6 @@
 package com.qiujie.service;
 
+import cn.hutool.core.date.DateTime;
 import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson.JSON;
@@ -8,9 +9,11 @@ import com.qiujie.assistant.AssistantLlmClient;
 import com.qiujie.assistant.AssistantProperties;
 import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
+import com.qiujie.dto.assistant.AssistantAction;
 import com.qiujie.dto.assistant.AssistantChatRequest;
 import com.qiujie.dto.assistant.AssistantChatResponse;
 import com.qiujie.dto.assistant.AssistantReference;
+import com.qiujie.util.ActionRegistry;
 import com.qiujie.entity.AssistantConversation;
 import com.qiujie.entity.AssistantMessage;
 import com.qiujie.entity.AssistantToolCall;
@@ -36,14 +39,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -51,6 +58,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Service
 public class AssistantService {
@@ -167,7 +175,8 @@ public class AssistantService {
                 .setIntent(toolResult.intent)
                 .setAnswer(answer)
                 .setReferences(toolResult.references)
-                .setSuggestions(buildSuggestions(toolResult.intent));
+                .setSuggestions(buildSuggestions(toolResult.intent))
+                .setAction(toolResult.action);
         return Response.success(response);
     }
 
@@ -320,15 +329,23 @@ public class AssistantService {
                     result = ToolResult.forbidden("员工自助助手只能查询你本人可见的人事数据，暂不支持查询其他员工、部门统计或全公司数据。");
                     break;
                 case "ATTENDANCE":
+                    if (!hasPermission("performance:attendance:list", "performance:attendance:query"))
+                        return ToolResult.forbidden("该查询需要考勤查看权限");
                     result = queryMyAttendance(question, staffId);
                     break;
                 case "LEAVE":
+                    if (!hasPermission("performance:leave:list", "performance:leave:query"))
+                        return ToolResult.forbidden("该查询需要请假查看权限");
                     result = queryMyLeave(staffId);
                     break;
                 case "OVERTIME":
+                    if (!hasPermission("performance:overtime:list", "performance:overtime:query"))
+                        return ToolResult.forbidden("该查询需要加班查看权限");
                     result = queryMyOvertime(question, staffId);
                     break;
                 case "SALARY":
+                    if (!hasPermission("money:salary:list", "money:salary:search"))
+                        return ToolResult.forbidden("该查询需要薪资查看权限");
                     result = queryMySalary(question, staffId);
                     break;
                 case "PROFILE":
@@ -336,6 +353,9 @@ public class AssistantService {
                     break;
                 case "SYSTEM_HELP":
                     result = querySystemHelp(question);
+                    break;
+                case "ACTION":
+                    result = executeAction(question, staffId);
                     break;
                 default:
                     result = ToolResult.unknown("我可以帮你查询本人的考勤、请假/加班、薪资摘要、个人档案，也可以说明导入导出和审批操作。");
@@ -354,8 +374,10 @@ public class AssistantService {
 
     private ToolResult queryMyAttendance(String question, Integer staffId) {
         String month = extractMonth(question);
+        DateTime dt = DateUtil.parse(month, "yyyyMM");
         Collection<Integer> staffIds = Collections.singletonList(staffId);
-        List<AttendanceMonthSummaryVO> summaries = attendanceMapper.queryMonthSummaryByStaffIds(month, staffIds);
+        List<AttendanceMonthSummaryVO> summaries = attendanceMapper.queryMonthSummaryByStaffIds(
+                dt.toSqlDate(), DateUtil.offsetMonth(dt, 1).toSqlDate(), staffIds);
         AttendanceMonthSummaryVO summary = summaries == null || summaries.isEmpty() ? new AttendanceMonthSummaryVO() : summaries.get(0);
         Map<String, Object> data = new HashMap<>();
         data.put("month", month);
@@ -508,6 +530,9 @@ public class AssistantService {
         if (isForbiddenQuestion(sanitized)) {
             return "FORBIDDEN";
         }
+        if (isActionCommand(sanitized)) {
+            return "ACTION";
+        }
         if (containsAny(sanitized, "怎么", "如何", "帮助", "导入", "导出", "上传", "下载", "审批", "菜单")) {
             return "SYSTEM_HELP";
         }
@@ -656,6 +681,7 @@ public class AssistantService {
         private Object data;
         private String fallbackAnswer;
         private boolean allowLlm = true;
+        private AssistantAction action;
         private List<AssistantReference> references = new ArrayList<>();
 
         private static ToolResult success(String intent, String toolName, Object data,
@@ -682,5 +708,101 @@ public class AssistantService {
             result.allowLlm = false;
             return result;
         }
+
+        private static ToolResult action(AssistantAction action, String fallbackAnswer) {
+            ToolResult result = new ToolResult();
+            result.intent = "ACTION";
+            result.toolName = action.getType();
+            result.action = action;
+            result.fallbackAnswer = fallbackAnswer;
+            result.allowLlm = false;
+            return result;
+        }
     }
+
+    // ==================== 权限与操作 ====================
+
+    private boolean hasPermission(String... authorities) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return false;
+        return auth.getAuthorities().stream()
+            .anyMatch(g -> Arrays.asList(authorities).contains(g.getAuthority()));
+    }
+
+    private boolean isActionCommand(String question) {
+        boolean hasAction = containsAny(question, "帮我", "我要", "我想", "申请", "提交", "请个",
+            "请一天", "请两天", "请三天", "设置", "修改", "更改");
+        boolean hasQuery = containsAny(question, "查看", "查询", "记录", "历史", "余额", "还剩", "情况", "怎么", "如何");
+        return hasAction && !hasQuery;
+    }
+
+    private ToolResult executeAction(String question, Integer staffId) {
+        // 1. 获取有权限的操作列表
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        List<String> perms = auth != null
+            ? auth.getAuthorities().stream().map(g -> g.getAuthority()).collect(Collectors.toList())
+            : Collections.emptyList();
+        List<ActionRegistry.ActionDef> available = ActionRegistry.getAvailable(perms);
+
+        if (available.isEmpty()) {
+            return ToolResult.unknown("当前无可用的操作");
+        }
+
+        // 2. LLM 分类
+        if (llmClient == null) {
+            return ToolResult.unknown("操作功能未配置，请联系管理员");
+        }
+
+        String actionList = available.stream()
+            .map(a -> a.type + "(" + a.label + ")").collect(Collectors.joining(", "));
+        String prompt = "你是操作分类器。根据用户消息选择最匹配的操作类型并提取参数。\n"
+            + "当前日期: " + LocalDate.now() + "\n"
+            + "可用操作: " + actionList + "\n"
+            + "规则: 只从以上操作中选择，不能选列表外的操作。\n"
+            + "参数不完整时返回 {\"needMore\":true,\"missing\":\"缺少的信息\"}\n"
+            + "无法匹配操作时返回 {\"actionType\":null}\n"
+            + "\n用户消息: \"" + question + "\"\n返回JSON:";
+
+        try {
+            String json = llmClient.generate(question, prompt);
+            if (json == null || json.isEmpty()) {
+                return ToolResult.unknown("请描述你想做什么操作");
+            }
+            json = json.trim().replaceAll("^```(json)?", "").replaceAll("```$", "").trim();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> parsed = JSON.parseObject(json, Map.class);
+            if (parsed == null) return ToolResult.unknown("请描述你想做什么操作");
+
+            if (Boolean.TRUE.equals(parsed.get("needMore"))) {
+                return ToolResult.unknown("请补充: " + parsed.getOrDefault("missing", "更多信息"));
+            }
+
+            String actionType = (String) parsed.get("actionType");
+            if (actionType == null) {
+                return ToolResult.unknown("我可以帮你查询人事数据，也可以进行请假、修改个人信息等操作");
+            }
+
+            ActionRegistry.ActionDef def = ActionRegistry.lookup(actionType);
+            if (def == null) {
+                return ToolResult.unknown("不支持的操作类型");
+            }
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> params = (Map<String, Object>) parsed.get("params");
+            if (params == null) params = new HashMap<>();
+
+            Map<String, String> api = new HashMap<>();
+            api.put("url", def.apiUrl);
+            api.put("method", def.apiMethod);
+
+            AssistantAction action = new AssistantAction(actionType, api, params);
+            String fallback = "确认" + def.label + "？";
+            return ToolResult.action(action, fallback);
+        } catch (Exception e) {
+            log.warn("Action classification failed", e);
+            return ToolResult.unknown("请描述你想做什么操作");
+        }
+    }
+
+    // ==================== end ====================
 }

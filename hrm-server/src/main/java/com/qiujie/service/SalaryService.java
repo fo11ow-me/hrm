@@ -1,5 +1,6 @@
 package com.qiujie.service;
 
+import cn.hutool.core.date.DateTime;
 import cn.hutool.core.date.DateUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -144,22 +145,25 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
      * @param list
      */
     private void setSalaryInfo(String month, List<StaffSalaryVO> list) {
+        DateTime dt = DateUtil.parse(month, "yyyyMM");
+        Date startDate = dt.toSqlDate();
+        Date endDate = DateUtil.offsetMonth(dt, 1).toSqlDate();
         for (StaffSalaryVO staffSalaryVO : list) {
             // 迟到扣款
             BigDecimal lateDeduct = BigDecimal.valueOf(this.attendanceMapper.countTimes(staffSalaryVO.getStaffId(),
-                    AttendanceStatusEnum.LATE.getCode(), month) * queryLateDeduct(staffSalaryVO));
+                    AttendanceStatusEnum.LATE.getCode(), startDate, endDate) * queryLateDeduct(staffSalaryVO));
             staffSalaryVO.setLateDeduct(lateDeduct);
             // 早退扣款
             BigDecimal leaveEarlyDeduct = BigDecimal.valueOf(this.attendanceMapper.countTimes(staffSalaryVO.getStaffId(),
-                    AttendanceStatusEnum.LEAVE_EARLY.getCode(), month) * queryLeaveEarlyDeduct(staffSalaryVO));
+                    AttendanceStatusEnum.LEAVE_EARLY.getCode(), startDate, endDate) * queryLeaveEarlyDeduct(staffSalaryVO));
             staffSalaryVO.setLeaveEarlyDeduct(leaveEarlyDeduct);
             // 旷工扣款
             BigDecimal absenteeismDeduct = BigDecimal.valueOf(this.attendanceMapper.countTimes(staffSalaryVO.getStaffId(),
-                    AttendanceStatusEnum.ABSENTEEISM.getCode(), month) * queryAbsenteeismDeduct(staffSalaryVO));
+                    AttendanceStatusEnum.ABSENTEEISM.getCode(), startDate, endDate) * queryAbsenteeismDeduct(staffSalaryVO));
             staffSalaryVO.setAbsenteeismDeduct(absenteeismDeduct);
             // 休假扣款
             List<Date> leaveDateList = this.attendanceMapper.queryLeaveDate(staffSalaryVO.getStaffId(),
-                    AttendanceStatusEnum.LEAVE.getCode(), month);
+                    AttendanceStatusEnum.LEAVE.getCode(), startDate, endDate);
             int count = 0;
             for (Date date : leaveDateList) {
                 // 不包括周末

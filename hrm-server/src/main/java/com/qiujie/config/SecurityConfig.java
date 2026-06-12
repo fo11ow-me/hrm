@@ -50,9 +50,13 @@ public class SecurityConfig {
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration corsConfiguration = new CorsConfiguration();
-        corsConfiguration.setAllowedOriginPatterns(List.of("*"));
+        corsConfiguration.setAllowedOriginPatterns(List.of(
+            "http://localhost:*",          // 本地开发
+            "https://localhost:*",         // 本地HTTPS
+            "http://127.0.0.1:*"          // 本地开发
+        ));
         corsConfiguration.setAllowedHeaders(List.of("*"));
-        corsConfiguration.setAllowedMethods(List.of("*"));
+        corsConfiguration.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
         corsConfiguration.setAllowCredentials(true);
         corsConfiguration.setMaxAge(Duration.ofHours(5));
         UrlBasedCorsConfigurationSource urlBasedCorsConfigurationSource = new UrlBasedCorsConfigurationSource();
@@ -64,7 +68,7 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http.authorizeRequests()
-                .antMatchers("/login/**","/validate/code","/refresh","/actuator/health/**").permitAll() // 登录、验证码、刷新 Token、健康检查放行
+                .antMatchers("/login/**","/validate/code","/refresh","/logout","/actuator/health/**").permitAll() // 登录、验证码、刷新 Token、登出、健康检查放行
                 //放行swagger
                 .antMatchers("/swagger-ui.html/**", "/swagger-resources/**", "/webjars/**", "/v2/**").permitAll()
                 .anyRequest().authenticated() // 任意请求认证之后才能访问
@@ -72,6 +76,7 @@ public class SecurityConfig {
                 .cors().configurationSource(corsConfigurationSource()) // 跨域
                 .and()
                 .csrf().disable()
+                .logout().disable()
                 //不通过Session获取SecurityContext
                 .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 .and()
