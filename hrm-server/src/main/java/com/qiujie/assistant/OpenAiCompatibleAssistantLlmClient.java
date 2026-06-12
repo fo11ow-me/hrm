@@ -43,6 +43,11 @@ public class OpenAiCompatibleAssistantLlmClient implements AssistantLlmClient {
 
     @Override
     public String generate(String question, String toolContext) {
+        return generate(question, toolContext, null);
+    }
+
+    @Override
+    public String generate(String question, String toolContext, List<Map<String, String>> history) {
         AssistantProperties.Provider provider = properties.getProvider();
         if (!properties.isEnabled()
                 || provider == null
@@ -59,7 +64,7 @@ public class OpenAiCompatibleAssistantLlmClient implements AssistantLlmClient {
         Map<String, Object> body = new HashMap<>();
         body.put("model", provider.getModel());
         body.put("temperature", 0.2);
-        body.put("messages", buildMessages(question, toolContext));
+        body.put("messages", buildMessages(question, toolContext, history));
 
         ResponseEntity<String> response = restTemplate.postForEntity(
                 resolveEndpoint(provider.getBaseUrl()),
@@ -69,12 +74,17 @@ public class OpenAiCompatibleAssistantLlmClient implements AssistantLlmClient {
         return extractContent(response.getBody());
     }
 
-    private List<Map<String, String>> buildMessages(String question, String toolContext) {
+    private List<Map<String, String>> buildMessages(String question, String toolContext,
+                                                     List<Map<String, String>> history) {
         List<Map<String, String>> messages = new ArrayList<>();
         Map<String, String> system = new HashMap<>();
         system.put("role", "system");
         system.put("content", "你是 HRM 系统的员工自助助手。只能基于系统提供的工具结果回答，不能编造数据，不能提供跨员工或跨部门数据。");
         messages.add(system);
+
+        if (history != null) {
+            messages.addAll(history);
+        }
 
         Map<String, String> user = new HashMap<>();
         user.put("role", "user");
@@ -135,6 +145,11 @@ public class OpenAiCompatibleAssistantLlmClient implements AssistantLlmClient {
 
             String result = content.asText("");
             log.debug("LLM generated {} characters", result.length());
+
+            if (!isValidContent(result)) {
+                log.warn("LLM content validation failed: non-CN ratio too high, {} chars", result.length());
+                return "";
+            }
             return result;
 
         } catch (JsonProcessingException e) {
@@ -147,5 +162,19 @@ public class OpenAiCompatibleAssistantLlmClient implements AssistantLlmClient {
             log.error("Unexpected error parsing LLM response", e);
             throw new ServiceException(500, "AI 服务响应处理失败");
         }
+    }
+
+    /**
+     * 内容质量校验：非中文字符超过 50% 视为异常输出。
+     */
+    private boolean isValidContent(String text) {
+        if (!StringUtils.hasText(text)) {
+            return false;
+        }
+        long total = text.codePoints().count();
+        long nonCn = text.codePoints()
+                .filter(cp -> !Character.isIdeographic(cp) && cp > 127)
+                .count();
+        return (double) nonCn / total <= 0.5;
     }
 }
