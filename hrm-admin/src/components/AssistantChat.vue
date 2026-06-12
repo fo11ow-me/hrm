@@ -49,6 +49,12 @@
         </div>
 
         <div ref="messagesPane" class="assistant-messages">
+          <el-skeleton v-if="loading" :rows="3" animated style="padding:8px" />
+          <div v-if="hasMore" class="load-more">
+            <el-button size="mini" :loading="loadingMore" @click="loadMore">
+              加载更早消息
+            </el-button>
+          </div>
           <div
             v-for="(item, index) in messages"
             :key="index"
@@ -57,7 +63,16 @@
           >
             <div class="message-bubble">
               <div class="message-content">{{ item.content }}</div>
-              <div v-if="item.intent" class="message-meta">{{ formatIntent(item.intent) }}</div>
+              <div v-if="item.action && item.role === 'ASSISTANT'" class="action-card">
+                <div class="action-btns">
+                  <el-button size="mini" type="primary" @click="confirmAction(item)">确认提交</el-button>
+                  <el-button size="mini" @click="cancelAction(item)">取消</el-button>
+                </div>
+              </div>
+              <div v-if="item.intent" class="message-meta">
+                {{ formatIntent(item.intent) }}
+                <span v-if="item.role === 'ASSISTANT' && item.llmEnhanced === false" class="tag-basic">基础回答</span>
+              </div>
             </div>
           </div>
           <div v-if="messages.length === 0" class="assistant-empty">
@@ -93,6 +108,7 @@
             v-model.trim="question"
             type="textarea"
             :rows="3"
+            :disabled="loading || loadingMore"
             maxlength="1000"
             show-word-limit
             placeholder="输入你想查询的人事问题"
@@ -114,7 +130,8 @@
 </template>
 
 <script>
-import { chat, deleteConversation, listConversations, queryConversation } from '@/api/assistant'
+import { chat, deleteConversation, listConversations, queryMessages } from '@/api/assistant'
+import request from '@/utils/request'
 
 export default {
   name: 'AssistantChat',
@@ -122,10 +139,13 @@ export default {
     return {
       visible: false,
       loading: false,
+      loadingMore: false,
       conversationId: null,
       conversations: [],
       messages: [],
       suggestions: [],
+      hasMore: false,
+      nextCursor: null,
       question: '',
       quickQuestions: [
         '我的考勤情况',
@@ -163,25 +183,79 @@ export default {
         this.startNewConversation()
         return
       }
-      queryConversation(id).then(response => {
+      this.loading = true
+      queryMessages(id, { size: 20 }).then(response => {
         if (response.code === 200) {
           const data = response.data || {}
-          this.messages = (data.messages || []).map(item => ({
+          this.messages = (data.records || []).reverse().map(item => ({
             role: item.role,
             content: item.content,
             intent: item.intent
           }))
+          this.hasMore = data.hasMore
+          this.nextCursor = data.nextCursor
           this.scrollToBottom()
         } else {
           this.$message.error(response.message)
         }
-      })
+      }).finally(() => { this.loading = false })
     },
     startNewConversation () {
       this.conversationId = null
       this.messages = []
       this.suggestions = []
+      this.hasMore = false
+      this.nextCursor = null
       this.question = ''
+    },
+    loadMore () {
+      if (!this.hasMore || this.loadingMore) return
+      this.loadingMore = true
+      const prevHeight = this.$refs.messagesPane.scrollHeight
+      queryMessages(this.conversationId, { size: 20, before: this.nextCursor }).then(response => {
+        if (response.code === 200) {
+          const data = response.data || {}
+          const older = (data.records || []).reverse().map(item => ({
+            role: item.role,
+            content: item.content,
+            intent: item.intent
+          }))
+          this.messages.unshift(...older)
+          this.hasMore = data.hasMore
+          this.nextCursor = data.nextCursor
+          this.$nextTick(() => {
+            this.$refs.messagesPane.scrollTop = this.$refs.messagesPane.scrollHeight - prevHeight
+          })
+        }
+      }).finally(() => { this.loadingMore = false })
+    },
+    confirmAction (item) {
+      const { url, method } = item.action.api
+      const params = item.action.params
+      const axiosConfig = { url, method }
+      if (method.toLowerCase() === 'get') {
+        axiosConfig.params = params
+      } else {
+        axiosConfig.data = params
+      }
+      request(axiosConfig).then(res => {
+        item.action = null
+        this.$set(item, 'action', null)
+        const msg = res.code === 200 ? '操作成功' : '操作失败: ' + (res.message || '')
+        this.messages.push({ role: 'ASSISTANT', content: msg })
+        this.scrollToBottom()
+      }).catch(err => {
+        item.action = null
+        this.$set(item, 'action', null)
+        this.messages.push({ role: 'ASSISTANT', content: '操作失败: ' + (err.message || '网络错误') })
+        this.scrollToBottom()
+      })
+    },
+    cancelAction (item) {
+      item.action = null
+      this.$set(item, 'action', null)
+      this.messages.push({ role: 'ASSISTANT', content: '已取消' })
+      this.scrollToBottom()
     },
     removeConversation () {
       if (!this.conversationId) return
@@ -218,7 +292,9 @@ export default {
           this.messages.push({
             role: 'ASSISTANT',
             content: data.answer,
-            intent: data.intent
+            intent: data.intent,
+            llmEnhanced: data.llmEnhanced,
+            action: data.action
           })
           this.loadConversations()
         } else {
@@ -334,6 +410,27 @@ export default {
   margin-top: 4px;
   color: #909399;
   font-size: 12px;
+}
+
+.action-card {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #fdf6ec;
+  border: 1px solid #faecd8;
+  border-radius: 6px;
+}
+.action-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.tag-basic {
+  margin-left: 6px;
+  color: #e6a23c;
+  font-size: 11px;
+  border: 1px solid #e6a23c;
+  border-radius: 3px;
+  padding: 0 4px;
 }
 
 .assistant-empty {
