@@ -10,6 +10,7 @@
       ></el-button>
     </div>
     <div class="r-content">
+      <NotificationBell />
       <el-dropdown trigger="hover" size="mini" @command="handleCommand">
         <span>
           <img ref="img" src="" alt="头像" class="avatar"/>
@@ -268,12 +269,14 @@ import { mapGetters } from 'vuex'
 import moment from 'moment'
 // 切换到中国时间
 import 'moment/locale/zh-cn'
+import NotificationBell from './NotificationBell.vue'
 import { setAvatar } from '@/utils/avatar'
 
 moment.locale('zh-cn')
 
 export default {
   name: 'Header',
+  components: { NotificationBell },
   data () {
     // 检查密码是否正确
     const checkPwd = (rule, value, callback) => {

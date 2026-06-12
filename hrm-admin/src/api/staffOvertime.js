@@ -88,3 +88,17 @@ export const exp = (month, filename) => {
 export const getImportApi = () => {
   return process.env.VUE_APP_BASE_API + url + '/import'
 }
+
+// 异步导入（大文件）
+export const getAsyncImportApi = () => {
+  return process.env.VUE_APP_BASE_API + url + '/import/task'
+}
+
+// 异步导出（大文件）
+export const createExportTask = (month, filename) => {
+  return request({
+    url: url + '/export/task',
+    method: 'get',
+    params: { month, filename }
+  })
+}

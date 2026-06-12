@@ -186,6 +186,7 @@
       <el-table
         ref="table"
         :data="table.tableData"
+        v-loading="tableLoading"
         height="85%"
         border
         stripe
@@ -297,8 +298,9 @@ export default {
           size: 10 // 每页展示的记录数
         }
       },
+      tableLoading: false,
       ids: [],
-      staffId: 0, // 默认为0
+      staffId: 0,
       deptList: []
     }
   },
@@ -420,6 +422,7 @@ export default {
     },
     // 加载数据
     loading () {
+      this.tableLoading = true
       list({
         current: this.table.pageConfig.current,
         size: this.table.pageConfig.size,
@@ -434,7 +437,7 @@ export default {
         } else {
           this.$message.error(response.message)
         }
-      })
+      }).finally(() => { this.tableLoading = false })
       queryAllDept().then(response => {
         const list = []
         response.data.forEach(dept => {

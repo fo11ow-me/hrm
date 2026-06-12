@@ -62,10 +62,22 @@
         >导入 <i class="el-icon-bottom"></i>
         </el-button>
       </el-upload>
+      <el-upload v-permission="['performance:overtime:import']" :action="asyncImportApi" :headers="headers" accept="xlsx" :show-file-list="false"
+                 :on-success="handleAsyncImportSuccess" :multiple="false"
+                 style="display:inline-block;margin-left:6px">
+        <el-button type="success" size="mini" plain
+        >导入(大文件) <i class="el-icon-bottom"></i>
+        </el-button>
+      </el-upload>
       <el-button v-permission="['performance:overtime:export']" type="warning" size="mini" @click="handleExport" style="margin-left: 10px"
       >导出 <i class="el-icon-top"></i>
       </el-button>
+      <el-button v-permission="['performance:overtime:export']" type="warning" size="mini" plain @click="handleExportAsync" style="margin-left:6px"
+      >导出(大文件) <i class="el-icon-top"></i>
+      </el-button>
     </div>
+
+    <FileTaskCard :task-list="taskList" :module-filter="moduleFilter" />
 
     <!---------------------- 搜索 ----------------------------->
     <div class="manage-header">
@@ -147,14 +159,18 @@
 </template>
 <script>
 // eslint-disable-next-line no-unused-vars
-import { queryByStaffIdAndDate, getImportApi, list, setOvertime, exp } from '@/api/staffOvertime'
+import { queryByStaffIdAndDate, getImportApi, getAsyncImportApi, list, setOvertime, exp, createExportTask } from '@/api/staffOvertime'
 import { queryByDeptIdAndTypeNum } from '@/api/overtime'
 import { mapGetters } from 'vuex'
 import { queryAll } from '@/api/dept'
 import { write } from '@/utils/docs'
+import fileTaskMixin from '@/mixins/fileTaskMixin'
+import FileTaskCard from '@/components/FileTaskCard.vue'
 
 export default {
   name: 'Overtime',
+  mixins: [fileTaskMixin],
+  components: { FileTaskCard },
   data () {
     const checkTotalOvertime = (rule, value, callback) => {
       if (value <= 0) {
@@ -176,6 +192,8 @@ export default {
             { validator: checkTotalOvertime, type: 'number', trigger: 'blur' }]
         }
       },
+      asyncImportApi: getAsyncImportApi(),
+      moduleFilter: 'STAFF_OVERTIME',
       searchForm: {
         deptList: [],
         formData: {}
@@ -327,10 +345,33 @@ export default {
       } else {
         this.$message.error('数据导入失败！')
       }
+    },
+    handleAsyncImportSuccess (response) {
+      if (response.code === 200) {
+        this.$message.success('已提交异步导入，请查看下方任务进度')
+        this.refreshTaskList()
+      } else {
+        this.$message.error(response.message || '提交失败')
+      }
+    },
+    handleExportAsync () {
+      const filename = this.month.substring(0, 4) + '年' + this.month.substring(4) + '月加班报表'
+      createExportTask(this.month, filename).then(response => {
+        if (response.code === 200) {
+          this.$message.success('已提交异步导出，请查看下方任务进度')
+          this.refreshTaskList()
+        } else {
+          this.$message.error(response.message || '提交失败')
+        }
+      })
     }
   },
   created () {
     this.loading()
+    this.connectSse()
+  },
+  beforeDestroy () {
+    this.disconnectSse()
   }
 }
 </script>

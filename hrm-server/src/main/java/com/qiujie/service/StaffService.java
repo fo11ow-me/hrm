@@ -228,8 +228,12 @@ public class StaffService extends ServiceImpl<StaffMapper, Staff> {
         for (Staff staff : list) {
             if (!save(staff)) {
                 return Response.error();
-            }// 设置默认密码、工号、部门
-            staff.setPassword(passwordEncoder.encode(defaultPassword)).setCode("staff_" + staff.getId()).setDeptId(13);
+            }
+            // 设置默认密码和工号；部门ID从Excel读取，未提供时才用默认值
+            staff.setPassword(passwordEncoder.encode(defaultPassword)).setCode("staff_" + staff.getId());
+            if (staff.getDeptId() == null) {
+                staff.setDeptId(1); // 默认部门
+            }
             if (!updateById(staff)) {
                 return Response.error();
             }
