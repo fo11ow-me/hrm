@@ -101,7 +101,6 @@ public class DocsController {
 
     @ApiOperation("头像下载")
     @GetMapping("/avatar/{filename}")
-    @PreAuthorize("hasAnyAuthority('system:docs:download')")
     public void getAvatar(@PathVariable String filename, HttpServletResponse response) throws IOException {
         this.docsService.download(filename, response);
     }
