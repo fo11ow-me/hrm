@@ -72,3 +72,6 @@ docs/
 /nbbuild/
 /nbdist/
 /.nb-gradle/
+
+# 本地开发运行时目录
+hrm-server/hrm-files/
