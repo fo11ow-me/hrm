@@ -84,6 +84,20 @@ public class StaffOvertimeController {
         return this.staffOvertimeService.imp(file);
     }
 
+    @ApiOperation("异步导入")
+    @PostMapping("/import/task")
+    @PreAuthorize("hasAnyAuthority('performance:overtime:import')")
+    public ResponseDTO createImportTask(MultipartFile file) throws IOException {
+        return this.staffOvertimeService.createImportTask(file);
+    }
+
+    @ApiOperation("异步导出")
+    @GetMapping("/export/task")
+    @PreAuthorize("hasAnyAuthority('performance:overtime:export')")
+    public ResponseDTO createExportTask(@RequestParam String month, @RequestParam String filename) {
+        return this.staffOvertimeService.createExportTask(month, filename);
+    }
+
     @ApiOperation("查询")
     @GetMapping("/{id}/{date}")
     @PreAuthorize("hasAnyAuthority('performance:overtime:query')")

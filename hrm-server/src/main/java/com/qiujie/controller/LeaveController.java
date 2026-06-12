@@ -28,24 +28,28 @@ public class LeaveController {
 
     @ApiOperation("新增")
     @PostMapping
+    @PreAuthorize("hasAnyAuthority('performance:leave:add')")
     public ResponseDTO add(@RequestBody Leave leave) {
         return this.leaveService.add(leave);
     }
 
     @ApiOperation("逻辑删除")
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('performance:leave:delete')")
     public ResponseDTO delete(@PathVariable Integer id) {
         return this.leaveService.delete(id);
     }
 
     @ApiOperation("批量逻辑删除")
     @DeleteMapping("/batch/{ids}")
+    @PreAuthorize("hasAnyAuthority('performance:leave:delete')")
     public ResponseDTO deleteBatch(@PathVariable List<Integer> ids) {
         return this.leaveService.deleteBatch(ids);
     }
 
     @ApiOperation("编辑更新")
     @PutMapping
+    @PreAuthorize("hasAnyAuthority('performance:leave:edit')")
     public ResponseDTO edit(@RequestBody Leave leave) {
         return this.leaveService.edit(leave);
     }
@@ -58,7 +62,7 @@ public class LeaveController {
 
 
     @ApiOperation("获取")
-    @GetMapping("/{deptId}/{typeNum}")
+    @GetMapping("/by-dept-type/{deptId}/{typeNum}")
     public ResponseDTO queryByDeptIdAndTypeNum(@PathVariable Integer deptId, @PathVariable Integer typeNum) {
         return this.leaveService.queryByDeptIdAndTypeNum(deptId, typeNum);
     }

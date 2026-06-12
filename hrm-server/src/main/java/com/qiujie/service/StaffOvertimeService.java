@@ -6,37 +6,47 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import cn.hutool.core.date.DateUtil;
+import com.alibaba.fastjson.JSON;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.qiujie.config.HolidayConfig;
+import com.qiujie.dto.OvertimeImportRow;
 import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
 import com.qiujie.entity.*;
-import com.qiujie.enums.BusinessStatusEnum;
-import com.qiujie.enums.OvertimeEnum;
-import com.qiujie.enums.OvertimeStatusEnum;
+import com.qiujie.enums.*;
 import com.qiujie.exception.ServiceException;
 import com.qiujie.mapper.OvertimeMapper;
 import com.qiujie.mapper.SalaryMapper;
 import com.qiujie.mapper.StaffMapper;
 import com.qiujie.mapper.StaffOvertimeMapper;
+import com.qiujie.util.AiHeaderMatcherImpl;
+import com.qiujie.util.ColumnMappingRegistry;
 import com.qiujie.util.DatetimeUtil;
 import com.qiujie.util.EasyExcelUtil;
+import com.qiujie.util.FlexibleExcelImporter;
+import com.qiujie.util.SecurityUtil;
 import com.qiujie.vo.OvertimeMonthVO;
 import com.qiujie.vo.StaffOvertimeVO;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.sql.Date;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.function.Consumer;
 
 /**
  * <p>
@@ -66,6 +76,24 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
 
     @Autowired
     private DatetimeUtil datetimeUtil;
+
+    @Autowired
+    private FileTaskService fileTaskService;
+
+    @Autowired
+    private FileTaskEngine fileTaskEngine;
+
+    @Autowired
+    private ThreadPoolTaskExecutor fileTaskExecutor;
+
+    @Autowired
+    private SecurityUtil securityUtil;
+
+    @Autowired(required = false)
+    private AiHeaderMatcherImpl aiHeaderMatcher;
+
+    @Autowired
+    private FileTaskErrorService fileTaskErrorService;
 
     public ResponseDTO add(StaffOvertime staffOvertime) {
         if (save(staffOvertime)) {
@@ -355,7 +383,225 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
         Long days = this.staffOvertimeMapper.selectCount(new QueryWrapper<StaffOvertime>().eq("staff_id", id).eq("status", OvertimeStatusEnum.TIME_OFF));
         return Response.success(days);
     }
+
+    // ==================== 异步导入导出 ====================
+
+    public ResponseDTO createImportTask(MultipartFile file) throws IOException {
+        File taskFile = fileTaskService.buildTaskFile("task-source", file.getOriginalFilename());
+        file.transferTo(taskFile);
+        FileTask task = fileTaskService.createTask(TaskTypeEnum.IMPORT,
+                TaskModuleEnum.STAFF_OVERTIME, file.getOriginalFilename(),
+                taskFile.getAbsolutePath(), null, securityUtil.getCurrentOperatorId());
+        fileTaskExecutor.execute(() -> runImportTask(task.getId()));
+        Map<String, Object> data = new HashMap<>();
+        data.put("taskId", task.getId());
+        return Response.success("已提交", data);
+    }
+
+    public ResponseDTO createExportTask(String month, String filename) {
+        Map<String, String> params = new HashMap<>();
+        params.put("month", month);
+        FileTask task = fileTaskService.createTask(TaskTypeEnum.EXPORT,
+                TaskModuleEnum.STAFF_OVERTIME, filename, null,
+                JSON.toJSONString(params), securityUtil.getCurrentOperatorId());
+        fileTaskExecutor.execute(() -> runExportTask(task.getId(), month, filename));
+        Map<String, Object> data = new HashMap<>();
+        data.put("taskId", task.getId());
+        return Response.success("已提交", data);
+    }
+
+    private void runImportTask(Long taskId) {
+        fileTaskService.markRunning(taskId);
+        FileTask task = fileTaskService.getById(taskId);
+        if (task == null) return;
+
+        try {
+            // 使用 FlexibleExcelImporter：无需 @ExcelProperty 注解，列序无关
+            Map<String, String> mapping = ColumnMappingRegistry.get(TaskModuleEnum.STAFF_OVERTIME);
+            List<FlexibleExcelImporter.ImportResult<OvertimeImportRow>> results =
+                    FlexibleExcelImporter.parse(new java.io.FileInputStream(task.getSourceFilePath()),
+                            2, TaskModuleEnum.STAFF_OVERTIME, OvertimeImportRow.class, aiHeaderMatcher);
+
+            List<OvertimeImportRow> buffer = new ArrayList<>(500);
+            int total = results.size(), success = 0, fail = 0;
+            for (FlexibleExcelImporter.ImportResult<OvertimeImportRow> row : results) {
+                if (row.isSuccess() && row.getEntity() != null) {
+                    buffer.add(row.getEntity());
+                    success++;
+                } else {
+                    fail++;
+                    fileTaskErrorService.save(new FileTaskError()
+                            .setTaskId(taskId).setRowNum(row.getRowNum())
+                            .setErrorMessage(row.getError() != null ? row.getError() : "解析失败"));
+                }
+                if (buffer.size() >= 500) {
+                    processOvertimeBatch(buffer, taskId);
+                    buffer.clear();
+                }
+                fileTaskService.increaseProgress(taskId, 0, success + fail, success, fail);
+            }
+            if (!buffer.isEmpty()) {
+                processOvertimeBatch(buffer, taskId);
+            }
+
+            fileTaskService.setTotalCount(taskId, total);
+            if (fail > 0) {
+                fileTaskService.generateErrorFile(taskId);
+                fileTaskService.finish(taskId, TaskStatusEnum.PARTIAL_SUCCESS);
+            } else {
+                fileTaskService.deleteSourceFile(taskId);
+                fileTaskService.finish(taskId, TaskStatusEnum.SUCCESS);
+            }
+        } catch (Exception e) {
+            fileTaskService.fail(taskId, e);
+        }
+    }
+
+    private void processOvertimeBatch(List<OvertimeImportRow> rows, Long taskId) {
+        // 复用 OvertimeImportHandler 的批处理逻辑
+        new OvertimeImportHandler().processBatch(rows, taskId,
+                error -> fileTaskErrorService.save(error));
+    }
+
+    private void runExportTask(Long taskId, String month, String exportName) {
+        Map<String, String> params = new HashMap<>();
+        params.put("month", month);
+        fileTaskEngine.runExport(taskId, new OvertimeExportHandler(), JSON.toJSONString(params), exportName);
+    }
+
+    class OvertimeImportHandler implements ImportProcessor<OvertimeImportRow> {
+
+        @Override
+        public Class<OvertimeImportRow> getRowClass() {
+            return OvertimeImportRow.class;
+        }
+
+        @Override
+        public TaskModuleEnum getModule() {
+            return TaskModuleEnum.STAFF_OVERTIME;
+        }
+
+        @Override
+        public void processBatch(List<OvertimeImportRow> rows, Long taskId,
+                                  Consumer<FileTaskError> errorCollector) {
+            // 预加载参照数据
+            Map<Integer, Staff> staffMap = new HashMap<>();
+            Map<String, Overtime> overtimeConfigCache = new HashMap<>();
+            Map<Integer, Salary> salaryCache = new HashMap<>();
+
+            List<StaffOvertime> validList = new ArrayList<>();
+            for (OvertimeImportRow row : rows) {
+                if (row.getStaffId() == null || row.getOvertimeDate() == null
+                        || row.getMorStartTime() == null || row.getMorEndTime() == null
+                        || row.getAftStartTime() == null || row.getAftEndTime() == null) {
+                    continue;
+                }
+                try {
+                    Staff staff = staffMap.computeIfAbsent(row.getStaffId(),
+                            id -> staffMapper.selectById(id));
+                    if (staff == null) {
+                        errorCollector.accept(new FileTaskError()
+                                .setTaskId(taskId).setRowNum(row.getRowNum())
+                                .setRawData(JSON.toJSONString(row)).setErrorMessage("员工不存在"));
+                        continue;
+                    }
+                    StaffOvertime entity = toEntity(row);
+                    entity.setStatus(OvertimeStatusEnum.OVERTIME);
+                    BigDecimal totalOvertime = calculateTotalOvertime(entity);
+                    entity.setTotalOvertime(totalOvertime);
+
+                    Salary salary = salaryCache.computeIfAbsent(staff.getId(),
+                            id -> salaryMapper.selectList(new QueryWrapper<Salary>()
+                                    .eq("staff_id", id).orderByDesc("month")).stream().findFirst().orElse(null));
+
+                    OvertimeEnum overtimeType;
+                    if (datetimeUtil.isHoliday(entity.getOvertimeDate())) {
+                        overtimeType = OvertimeEnum.HOLIDAY_OVERTIME;
+                    } else if (DateUtil.isWeekend(DateUtil.date(entity.getOvertimeDate()))) {
+                        overtimeType = OvertimeEnum.DAY_OFF_OVERTIME;
+                    } else {
+                        overtimeType = OvertimeEnum.WORKDAY_OVERTIME;
+                    }
+                    entity.setTypeNum(overtimeType);
+
+                    String configKey = staff.getDeptId() + "_" + overtimeType.getCode();
+                    Overtime overtime = overtimeConfigCache.computeIfAbsent(configKey,
+                            k -> overtimeMapper.selectOne(new QueryWrapper<Overtime>()
+                                    .eq("type_num", overtimeType).eq("dept_id", staff.getDeptId())));
+
+                    if (overtimeType == OvertimeEnum.DAY_OFF_OVERTIME
+                            && overtime != null && overtime.getTimeOffFlag() == 1
+                            && totalOvertime.compareTo(new BigDecimal(8)) >= 0) {
+                        entity.setStatus(OvertimeStatusEnum.TIME_OFF);
+                    } else if (overtime != null) {
+                        calculateOvertimeSalary(entity, totalOvertime, salary, overtime);
+                    }
+                    validList.add(entity);
+                } catch (Exception e) {
+                    errorCollector.accept(new FileTaskError()
+                            .setTaskId(taskId).setRowNum(row.getRowNum())
+                            .setRawData(JSON.toJSONString(row)).setErrorMessage(e.getMessage()));
+                }
+            }
+            if (!validList.isEmpty()) {
+                for (StaffOvertime entity : validList) {
+                    QueryWrapper<StaffOvertime> qw = new QueryWrapper<>();
+                    qw.eq("staff_id", entity.getStaffId()).eq("overtime_date", entity.getOvertimeDate());
+                    saveOrUpdate(entity, qw);
+                }
+            }
+        }
+
+        private StaffOvertime toEntity(OvertimeImportRow row) {
+            return new StaffOvertime()
+                    .setStaffId(row.getStaffId())
+                    .setMorStartTime(row.getMorStartTime())
+                    .setMorEndTime(row.getMorEndTime())
+                    .setAftStartTime(row.getAftStartTime())
+                    .setAftEndTime(row.getAftEndTime())
+                    .setOvertimeDate(row.getOvertimeDate());
+        }
+    }
+
+    class OvertimeExportHandler implements ExportProcessor<OvertimeMonthVO> {
+
+        @Override
+        public Class<OvertimeMonthVO> getRowClass() {
+            return OvertimeMonthVO.class;
+        }
+
+        @Override
+        public TaskModuleEnum getModule() {
+            return TaskModuleEnum.STAFF_OVERTIME;
+        }
+
+        @Override
+        public IPage<OvertimeMonthVO> queryPage(int current, int pageSize, String queryParamsJson) {
+            Map<String, String> params = JSON.parseObject(queryParamsJson, Map.class);
+            String month = params.get("month");
+
+            IPage<OvertimeMonthVO> page = new Page<>(current, pageSize);
+            List<OvertimeMonthVO> list = staffMapper.queryOvertimeMonthVO();
+            for (OvertimeMonthVO vo : list) {
+                vo.setOvertimeTimes(staffOvertimeMapper.countTimes(vo.getStaffId(),
+                        OvertimeStatusEnum.OVERTIME.getCode(), month));
+                vo.setTimeOffDays(staffOvertimeMapper.countTimes(vo.getStaffId(),
+                        OvertimeStatusEnum.TIME_OFF.getCode(), month));
+            }
+            int from = (current - 1) * pageSize;
+            int to = Math.min(from + pageSize, list.size());
+            if (from >= list.size()) {
+                page.setRecords(Collections.emptyList());
+            } else {
+                page.setRecords(list.subList(from, to));
+            }
+            page.setTotal(list.size());
+            return page;
+        }
+    }
 }
+
+
 
 
 

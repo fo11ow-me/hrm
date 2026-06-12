@@ -29,12 +29,14 @@ public class OvertimeController {
 
     @ApiOperation("新增")
     @PostMapping
+    @PreAuthorize("hasAnyAuthority('system:department:setting')")
     public ResponseDTO add(@RequestBody Overtime overtime) {
         return this.overtimeService.add(overtime);
     }
 
     @ApiOperation("逻辑删除")
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('system:department:setting')")
     public ResponseDTO delete(@PathVariable Integer id) {
         return this.overtimeService.delete(id);
     }
@@ -47,6 +49,7 @@ public class OvertimeController {
 
     @ApiOperation("编辑更新")
     @PutMapping
+    @PreAuthorize("hasAnyAuthority('system:department:setting')")
     public ResponseDTO edit(@RequestBody Overtime overtime) {
         return this.overtimeService.edit(overtime);
     }
@@ -58,7 +61,7 @@ public class OvertimeController {
     }
 
     @ApiOperation("获取")
-    @GetMapping("/{deptId}/{typeNum}")
+    @GetMapping("/by-dept-type/{deptId}/{typeNum}")
     public ResponseDTO queryByDeptIdAndTypeNum(@PathVariable Integer deptId, @PathVariable String typeNum) {
         return this.overtimeService.queryByDeptIdAndTypeNum(deptId,typeNum);
     }
