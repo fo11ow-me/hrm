@@ -150,6 +150,7 @@ fi
 
 echo ""
 echo "========== 5. 推送镜像到 Registry（并行） =========="
+PUSH_LOG=""
 
 if $REBUILD_SERVER; then
   PUSH_LOG=$(mktemp)
