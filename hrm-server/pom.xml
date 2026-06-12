@@ -148,6 +148,13 @@
             <version>5.8.25</version>
         </dependency>
 
+        <!-- zstd 无损压缩 -->
+        <dependency>
+            <groupId>com.github.luben</groupId>
+            <artifactId>zstd-jni</artifactId>
+            <version>1.5.6-6</version>
+        </dependency>
+
         <dependency>
             <groupId>com.alibaba</groupId>
             <artifactId>easyexcel</artifactId>

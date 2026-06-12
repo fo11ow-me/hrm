@@ -101,4 +101,23 @@ public class LoginController {
             return Response.error("Token 无效: " + e.getMessage());
         }
     }
+
+    @ApiOperation("登出")
+    @PostMapping("/logout")
+    public ResponseDTO logout(HttpServletResponse response) {
+        // 清除 httpOnly Cookie
+        Cookie accessTokenCookie = new Cookie("token", "");
+        accessTokenCookie.setHttpOnly(true);
+        accessTokenCookie.setPath("/");
+        accessTokenCookie.setMaxAge(0);
+
+        Cookie refreshTokenCookie = new Cookie("refreshToken", "");
+        refreshTokenCookie.setHttpOnly(true);
+        refreshTokenCookie.setPath("/refresh");
+        refreshTokenCookie.setMaxAge(0);
+
+        response.addCookie(accessTokenCookie);
+        response.addCookie(refreshTokenCookie);
+        return Response.success("登出成功");
+    }
 }
