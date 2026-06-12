@@ -40,6 +40,22 @@ public final class ColumnMappingRegistry {
                 Map.entry("加班日期", "overtimeDate")
         ));
 
+        REGISTRY.put(TaskModuleEnum.SALARY, Map.ofEntries(
+                Map.entry("员工id", "staffId"),
+                Map.entry("基础工资", "baseSalary"),
+                Map.entry("日薪", "daySalary"),
+                Map.entry("时薪", "hourSalary"),
+                Map.entry("加班费", "overtimeSalary"),
+                Map.entry("补贴", "subsidy"),
+                Map.entry("奖金", "bonus"),
+                Map.entry("月份", "month"),
+                Map.entry("迟到扣款", "lateDeduct"),
+                Map.entry("早退扣款", "leaveEarlyDeduct"),
+                Map.entry("旷工扣款", "absenteeismDeduct"),
+                Map.entry("请假扣款", "leaveDeduct"),
+                Map.entry("备注", "remark")
+        ));
+
         REGISTRY.put(TaskModuleEnum.STAFF, Map.ofEntries(
                 Map.entry("工号", "code"),
                 Map.entry("姓名", "name"),

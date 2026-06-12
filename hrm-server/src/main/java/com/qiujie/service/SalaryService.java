@@ -6,24 +6,32 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.qiujie.entity.FileTask;
 import com.qiujie.entity.Salary;
 import com.qiujie.entity.SalaryDeduct;
 import com.qiujie.enums.AttendanceStatusEnum;
 import com.qiujie.enums.DeductEnum;
+import com.qiujie.enums.TaskModuleEnum;
+import com.qiujie.enums.TaskStatusEnum;
+import com.qiujie.enums.TaskTypeEnum;
 import com.qiujie.mapper.AttendanceMapper;
 import com.qiujie.mapper.SalaryMapper;
 import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
 import com.qiujie.mapper.StaffOvertimeMapper;
 import com.qiujie.util.EasyExcelUtil;
+import com.qiujie.util.SecurityUtil;
 import com.qiujie.vo.StaffSalaryVO;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -58,6 +66,16 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
 
     @Autowired
     private StaffOvertimeMapper staffOvertimeMapper;
+
+    @Autowired
+    private FileTaskService fileTaskService;
+
+    @Autowired
+    @Qualifier("fileTaskExecutor")
+    private ThreadPoolTaskExecutor fileTaskExecutor;
+
+    @Autowired
+    private SecurityUtil securityUtil;
 
     public ResponseDTO add(Salary salary) {
         if (save(salary)) {
@@ -281,6 +299,75 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
         queryWrapper.eq("dept_id", staffSalaryVO.getDeptId()).eq("type_num", DeductEnum.LEAVE_DEDUCT);
         SalaryDeduct salaryDeduct = this.salaryDeductService.getOne(queryWrapper);
         return salaryDeduct != null ? salaryDeduct.getDeduct() : DeductEnum.LEAVE_DEDUCT.getDefaultValue();
+    }
+
+    /**
+     * 创建异步导入任务（支持大文件）
+     */
+    public ResponseDTO createImportTask(MultipartFile file) throws IOException {
+        String originalFilename = file.getOriginalFilename();
+        File taskFile = fileTaskService.buildTaskFile("task-source", originalFilename);
+        file.transferTo(taskFile);
+        FileTask task = fileTaskService.createTask(TaskTypeEnum.IMPORT, TaskModuleEnum.SALARY,
+                originalFilename, taskFile.getAbsolutePath(), null, getCurrentOperatorId());
+        fileTaskExecutor.execute(() -> runImportTask(task.getId()));
+        Map<String, Object> result = new HashMap<>();
+        result.put("taskId", task.getId());
+        return Response.success(result);
+    }
+
+    /**
+     * 创建异步导出任务（支持大文件）
+     */
+    public ResponseDTO createExportTask(String month, String filename) {
+        FileTask task = fileTaskService.createTask(TaskTypeEnum.EXPORT, TaskModuleEnum.SALARY,
+                filename, null, month, getCurrentOperatorId());
+        fileTaskExecutor.execute(() -> runExportTask(task.getId(), month, filename));
+        Map<String, Object> result = new HashMap<>();
+        result.put("taskId", task.getId());
+        return Response.success(result);
+    }
+
+    private void runImportTask(Long taskId) {
+        try {
+            fileTaskService.markRunning(taskId);
+            FileTask task = fileTaskService.getById(taskId);
+            File sourceFile = new File(task.getSourceFilePath());
+            List<Salary> list = EasyExcelUtil.read(new java.io.FileInputStream(sourceFile), 1, Salary.class);
+            fileTaskService.setTotalCount(taskId, list.size());
+            if (saveBatch(list)) {
+                fileTaskService.finish(taskId, TaskStatusEnum.SUCCESS);
+            } else {
+                fileTaskService.finish(taskId, TaskStatusEnum.PARTIAL_SUCCESS);
+            }
+            sourceFile.delete();
+        } catch (Exception e) {
+            fileTaskService.fail(taskId, e);
+        }
+    }
+
+    private void runExportTask(Long taskId, String month, String filename) {
+        try {
+            fileTaskService.markRunning(taskId);
+            List<StaffSalaryVO> list = salaryMapper.queryStaffSalaryVO();
+            setSalaryInfo(month, list);
+            String exportName = filename != null ? filename : month + "薪资报表";
+            File file = fileTaskService.buildTaskFile("task-result", exportName + ".xlsx");
+            com.alibaba.excel.EasyExcel.write(file, StaffSalaryVO.class).sheet(exportName).doWrite(list);
+            fileTaskService.setTotalCount(taskId, list.size());
+            fileTaskService.setResultFile(taskId, file.getAbsolutePath());
+            fileTaskService.finish(taskId, TaskStatusEnum.SUCCESS);
+        } catch (Exception e) {
+            fileTaskService.fail(taskId, e);
+        }
+    }
+
+    private Integer getCurrentOperatorId() {
+        try {
+            return securityUtil != null ? securityUtil.getCurrentOperatorId() : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
 

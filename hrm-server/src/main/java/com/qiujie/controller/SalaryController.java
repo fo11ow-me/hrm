@@ -13,6 +13,7 @@ import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 
 /**
@@ -84,6 +85,20 @@ public class SalaryController {
     @PreAuthorize("hasAnyAuthority('money:salary:import')")
     public ResponseDTO imp(MultipartFile file) throws IOException {
         return this.salaryService.imp(file);
+    }
+
+    @ApiOperation("异步导入接口（支持大文件）")
+    @PostMapping("/import/task")
+    @PreAuthorize("hasAnyAuthority('money:salary:import')")
+    public ResponseDTO createImportTask(MultipartFile file) throws IOException {
+        return this.salaryService.createImportTask(file);
+    }
+
+    @ApiOperation("异步导出接口（支持大文件）")
+    @GetMapping("/export/task")
+    @PreAuthorize("hasAnyAuthority('money:salary:export')")
+    public ResponseDTO createExportTask(@RequestParam String month, @RequestParam String filename) {
+        return this.salaryService.createExportTask(month, filename);
     }
 
     @ApiOperation("设置工资")

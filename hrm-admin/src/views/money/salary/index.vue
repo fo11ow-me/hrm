@@ -83,7 +83,7 @@
     <!--操作-->
     <div style="margin-bottom: 10px">
       <el-upload v-permission="['money:salary:import']" :action="importApi" :headers="headers" accept="xlsx" :show-file-list="false"
-                 :on-success="handleImportSuccess" :multiple="false"
+                 :on-success="handleAsyncImportSuccess" :multiple="false"
                  style="display:inline-block">
         <el-button type="success" size="mini"
         >导入 <i class="el-icon-bottom"></i>
@@ -189,11 +189,10 @@
   </div>
 </template>
 <script>
-import { getImportApi, list, setSalary, exp } from '@/api/salary'
+import { getImportTaskApi, list, setSalary, createExportTask } from '@/api/salary'
 import { queryByStaffId } from '@/api/insurance'
 import { mapGetters } from 'vuex'
 import { queryAll } from '@/api/dept'
-import { write } from '@/utils/docs'
 
 export default {
   name: 'Salary',
@@ -239,7 +238,7 @@ export default {
     },
     // 获取导入数据的接口
     importApi () {
-      return getImportApi()
+      return getImportTaskApi()
     }
   },
   watch: {
@@ -373,19 +372,23 @@ export default {
         }
       })
     },
-    // 导出数据
+    // 导出数据（异步任务）
     handleExport () {
       const filename = this.month.substring(0, 4) + '年' + this.month.substring(4) + '月工资报表'
-      exp(this.month, filename).then(response => {
-        write(response, filename + '.xlsx')
+      createExportTask(this.month, filename).then(response => {
+        if (response.code === 200) {
+          this.$message.success('导出任务已创建，完成后可在头像通知中下载')
+        } else {
+          this.$message.error('导出任务创建失败！')
+        }
       })
     },
-    handleImportSuccess (response) {
+    handleAsyncImportSuccess (response) {
       if (response.code === 200) {
-        this.$message.success('数据导入成功！')
+        this.$message.success('导入任务已创建，完成后可在头像通知中查看')
         this.search()
       } else {
-        this.$message.error('数据导入失败！')
+        this.$message.error('导入任务创建失败！')
       }
     }
   },
