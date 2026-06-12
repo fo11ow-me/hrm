@@ -60,7 +60,7 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
     private FileTaskErrorService fileTaskErrorService;
 
     @Autowired
-    private FileTaskSseService sseService;
+    private SseService sseService;
 
     @Autowired
     private SecurityUtil securityUtil;
@@ -332,6 +332,13 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
             // 删除关联的错误明细和任务记录，防止表无限增长
             fileTaskErrorService.remove(new QueryWrapper<FileTaskError>().eq("task_id", task.getId()));
             removeById(task.getId());
+        }
+    }
+
+    public void deleteSourceFile(Long taskId) {
+        FileTask task = getById(taskId);
+        if (task != null) {
+            deleteIfExists(task.getSourceFilePath());
         }
     }
 

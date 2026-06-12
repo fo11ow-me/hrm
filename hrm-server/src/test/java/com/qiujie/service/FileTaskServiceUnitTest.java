@@ -45,7 +45,7 @@ class FileTaskServiceUnitTest {
     private FileTaskErrorService fileTaskErrorService;
 
     @Mock
-    private FileTaskSseService sseService;
+    private SseService sseService;
 
     @Mock
     private SecurityUtil securityUtil;
