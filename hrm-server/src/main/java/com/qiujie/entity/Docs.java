@@ -45,9 +45,17 @@ public class Docs implements Serializable {
     @TableField("md5")
     private String md5;
 
-    @ApiModelProperty("文件大小kB")
+    @ApiModelProperty("文件原始大小kB")
     @TableField("size")
     private Long size;
+
+    @ApiModelProperty("磁盘实际占用(字节)")
+    @TableField("stored_size")
+    private Long storedSize;
+
+    @ApiModelProperty("是否zstd压缩: 0=否 1=是")
+    @TableField("compressed")
+    private Integer compressed;
 
     @ApiModelProperty("文件上传者id")
     @TableField("staff_id")

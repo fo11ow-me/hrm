@@ -73,7 +73,7 @@ public class FileTaskEngine {
                     }).headRowNumber(processor.headRowNumber()).sheet().doRead();
 
             FileTask finishedTask = fileTaskService.getById(taskId);
-            if (finishedTask != null) {
+            if (finishedTask != null && finishedTask.getProcessedCount() != null) {
                 // 流式读取完成后回填真实总量，前端进度显示准确
                 fileTaskService.setTotalCount(taskId, finishedTask.getProcessedCount());
             }
@@ -81,6 +81,8 @@ public class FileTaskEngine {
                 fileTaskService.generateErrorFile(taskId);
                 fileTaskService.finish(taskId, TaskStatusEnum.PARTIAL_SUCCESS);
             } else {
+                // 导入完全成功时立即删除源文件，避免敏感数据长期驻留磁盘
+                fileTaskService.deleteSourceFile(taskId);
                 fileTaskService.finish(taskId, TaskStatusEnum.SUCCESS);
             }
         } catch (Exception e) {

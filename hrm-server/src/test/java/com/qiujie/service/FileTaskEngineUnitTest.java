@@ -79,6 +79,7 @@ class FileTaskEngineUnitTest {
 
         verify(fileTaskService).markRunning(taskId);
         verify(processor, atLeastOnce()).processBatch(anyList(), eq(taskId), any());
+        verify(fileTaskService).deleteSourceFile(taskId);
         verify(fileTaskService).finish(taskId, TaskStatusEnum.SUCCESS);
         verify(fileTaskService, never()).generateErrorFile(anyLong());
     }
@@ -101,6 +102,7 @@ class FileTaskEngineUnitTest {
         // 1200 行 / 500 = 3 批
         verify(processor, times(3)).processBatch(anyList(), eq(taskId), any());
         verify(fileTaskService, times(3)).increaseProgress(anyLong(), anyInt(), anyInt(), anyInt(), anyInt());
+        verify(fileTaskService).deleteSourceFile(taskId);
         verify(fileTaskService).finish(taskId, TaskStatusEnum.SUCCESS);
     }
 
@@ -122,6 +124,7 @@ class FileTaskEngineUnitTest {
 
         verify(fileTaskService).finish(taskId, TaskStatusEnum.PARTIAL_SUCCESS);
         verify(fileTaskService).generateErrorFile(taskId);
+        verify(fileTaskService, never()).deleteSourceFile(anyLong());
     }
 
     @Test
@@ -139,6 +142,7 @@ class FileTaskEngineUnitTest {
 
         fileTaskEngine.runImport(taskId, processor);
 
+        verify(fileTaskService).deleteSourceFile(taskId);
         verify(fileTaskService).finish(taskId, TaskStatusEnum.SUCCESS);
         verify(processor, never()).processBatch(anyList(), anyLong(), any());
     }

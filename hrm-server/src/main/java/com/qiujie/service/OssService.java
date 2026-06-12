@@ -2,6 +2,8 @@ package com.qiujie.service;
 
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.model.OSSObject;
+import com.aliyun.oss.model.OSSObjectSummary;
+import com.aliyun.oss.model.ObjectListing;
 import com.aliyun.oss.model.ObjectMetadata;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -10,6 +12,9 @@ import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
 
 @Service
 public class OssService {
@@ -70,5 +75,25 @@ public class OssService {
 
     public boolean exists(String key) {
         return client.doesObjectExist(bucketName, key);
+    }
+
+    /**
+     * 列举所有 object key。
+     */
+    public List<String> listKeys() {
+        List<String> keys = new ArrayList<>();
+        ObjectListing listing = client.listObjects(bucketName);
+        for (OSSObjectSummary summary : listing.getObjectSummaries()) {
+            keys.add(summary.getKey());
+        }
+        return keys;
+    }
+
+    /**
+     * 获取 object 的最后修改时间。
+     */
+    public Date getLastModified(String key) {
+        ObjectMetadata metadata = client.getObjectMetadata(bucketName, key);
+        return metadata.getLastModified();
     }
 }
