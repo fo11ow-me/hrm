@@ -10,13 +10,28 @@
       ></el-button>
     </div>
     <div class="r-content">
-      <NotificationBell />
-      <el-dropdown trigger="hover" size="mini" @command="handleCommand">
+      <el-dropdown trigger="hover" size="mini" @command="handleCommand" @visible-change="onDropdownVisible">
         <span>
-          <img ref="img" src="" alt="头像" class="avatar"/>
+          <el-badge :value="unreadCount" :hidden="unreadCount === 0" is-dot>
+            <img ref="img" src="" alt="头像" class="avatar"/>
+          </el-badge>
         </span>
         <el-dropdown-menu slot="dropdown">
-          <el-dropdown-item command="showInfo">个人信息</el-dropdown-item>
+          <!-- 通知列表 -->
+          <div class="notif-list">
+            <div v-if="notifications.length === 0" class="notif-empty">暂无通知</div>
+            <div v-for="(item, index) in notifications" :key="index" class="notif-item" @click.stop>
+              <div class="notif-title">{{ item.title }}</div>
+              <div class="notif-body">{{ item.body }}</div>
+              <div class="notif-time">{{ item.time }}</div>
+              <div v-if="item.taskId" class="notif-task">
+                <span v-if="item.status === 'SUCCESS'" style="color:#67c23a">完成</span>
+                <span v-else-if="item.status === 'FAILED'" style="color:#f56c6c">失败</span>
+                <span v-else style="color:#409eff">{{ item.processed }}/{{ item.total }}</span>
+              </div>
+            </div>
+          </div>
+          <el-dropdown-item divided command="showInfo">个人信息</el-dropdown-item>
           <el-dropdown-item command="editPwd">修改密码</el-dropdown-item>
           <el-dropdown-item command="leave">请假</el-dropdown-item>
           <el-dropdown-item command="logout">退出</el-dropdown-item>
@@ -269,14 +284,12 @@ import { mapGetters } from 'vuex'
 import moment from 'moment'
 // 切换到中国时间
 import 'moment/locale/zh-cn'
-import NotificationBell from './NotificationBell.vue'
 import { setAvatar } from '@/utils/avatar'
 
 moment.locale('zh-cn')
 
 export default {
   name: 'Header',
-  components: { NotificationBell },
   data () {
     // 检查密码是否正确
     const checkPwd = (rule, value, callback) => {
@@ -420,11 +433,14 @@ export default {
       table: {
         tableData: [],
         pageConfig: {
-          total: 10, // 记录总数
-          current: 1, // 起始页
-          size: 10 // 每页展示的记录数
+          total: 10,
+          current: 1,
+          size: 10
         }
-      }
+      },
+      notifications: [],
+      unreadCount: 0,
+      eventSource: null
     }
   },
   computed: {
@@ -438,8 +454,60 @@ export default {
   },
   mounted () {
     setAvatar(this.$refs.img)
+    this.connectSse()
+  },
+  beforeDestroy () {
+    this.disconnectSse()
   },
   methods: {
+    connectSse () {
+      const baseUrl = process.env.VUE_APP_BASE_API || ''
+      this.eventSource = new EventSource(baseUrl + '/notification/subscribe')
+      this.eventSource.addEventListener('connected', () => {})
+      this.eventSource.addEventListener('notification', (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          this.notifications.unshift(data)
+          if (this.notifications.length > 20) this.notifications.pop()
+          this.unreadCount++
+        } catch (e) { /* ignore */ }
+      })
+      this.eventSource.addEventListener('task-update', (event) => {
+        try {
+          const task = JSON.parse(event.data)
+          const existing = this.notifications.find(n => n.taskId === task.id)
+          const item = {
+            title: task.taskType === 'IMPORT' ? '导入任务' : '导出任务',
+            body: task.fileName || '',
+            time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+            taskId: task.id,
+            status: task.status,
+            processed: task.processedCount,
+            total: task.totalCount
+          }
+          if (existing) {
+            Object.assign(existing, item)
+          } else {
+            this.notifications.unshift(item)
+            if (this.notifications.length > 20) this.notifications.pop()
+            this.unreadCount++
+          }
+        } catch (e) { /* ignore */ }
+      })
+      this.eventSource.onerror = () => {
+        this.eventSource.close()
+        setTimeout(() => this.connectSse(), 10000)
+      }
+    },
+    disconnectSse () {
+      if (this.eventSource) {
+        this.eventSource.close()
+        this.eventSource = null
+      }
+    },
+    onDropdownVisible (visible) {
+      if (visible) this.unreadCount = 0
+    },
     // 不是周末
     isNotWeekend (day) {
       return moment(day).weekday() !== 5 && moment(day).weekday() !== 6
@@ -623,4 +691,20 @@ header {
   background-color: white;
   position: relative;
 }
+
+.notif-list {
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 0 12px;
+}
+.notif-item {
+  padding: 6px 0;
+  border-bottom: 1px solid #ebeef5;
+}
+.notif-item:last-child { border-bottom: none; }
+.notif-title { font-weight: 600; font-size: 13px; }
+.notif-body { color: #606266; font-size: 12px; margin-top: 2px; }
+.notif-time { color: #c0c4cc; font-size: 11px; margin-top: 2px; }
+.notif-task { font-size: 12px; margin-top: 2px; }
+.notif-empty { color: #909399; text-align: center; padding: 12px; font-size: 13px; }
 </style>
