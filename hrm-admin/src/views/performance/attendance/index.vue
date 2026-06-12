@@ -125,16 +125,10 @@ import {
 } from '@/api/attendance'
 import { mapGetters } from 'vuex'
 import { queryAll as queryAllDept } from '@/api/dept'
-import FileTaskCard from '@/components/FileTaskCard'
-import fileTaskMixin from '@/mixins/fileTaskMixin'
-
 export default {
   name: 'Attendance',
-  mixins: [fileTaskMixin],
-  components: { FileTaskCard },
   data () {
     return {
-      moduleFilter: 'ATTENDANCE',
       dialog: {
         isShow: false,
         data: {},
