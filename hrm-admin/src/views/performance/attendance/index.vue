@@ -33,10 +33,8 @@
       >
         导出
       </el-button>
-      <el-button size="mini" style="margin-left: 10px" :loading="taskLoading" @click="loadTasks(moduleFilter)">刷新任务</el-button>
     </div>
 
-    <file-task-card :task-list="taskList" @download="downloadTask" />
 
     <div class="manage-header">
       <el-form label-width="auto" :model="searchForm.formData" :inline="true" size="mini">
@@ -255,7 +253,6 @@ export default {
       }).then(response => {
         if (response.code === 200) {
           this.$message.success(response.message || '导出任务已创建')
-          this.loadTasks()
         } else {
           this.$message.error(response.message)
         }
@@ -264,7 +261,6 @@ export default {
     handleImportSuccess (response) {
       if (response.code === 200) {
         this.$message.success(response.message || '导入任务已创建')
-        this.loadTasks()
       } else {
         this.$message.error(response.message || '导入失败')
       }
@@ -276,12 +272,8 @@ export default {
   created () {
     this.loadBaseData()
     this.search()
-    this.loadTasks()
-    this.connectSse()
-    this.requestNotificationPermission()
   },
   beforeDestroy () {
-    this.disconnectSse()
   }
 }
 </script>
