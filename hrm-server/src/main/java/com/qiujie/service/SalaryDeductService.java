@@ -76,7 +76,7 @@ public class SalaryDeductService extends ServiceImpl<SalaryDeductMapper, SalaryD
     public ResponseDTO setSalaryDeduct(SalaryDeduct salaryDeduct) {
         QueryWrapper<SalaryDeduct> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("dept_id", salaryDeduct.getDeptId()).eq("type_num", salaryDeduct.getTypeNum());
-        if (saveOrUpdate(salaryDeduct, queryWrapper)) {
+        if (update(salaryDeduct, queryWrapper) || save(salaryDeduct)) {
             return Response.success();
         }
         return Response.error();

@@ -38,7 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.IOException;
 import java.sql.Date;
@@ -88,6 +88,9 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
 
     @Autowired
     private FileTaskEngine fileTaskEngine;
+
+    @Autowired
+    private FileUploadService fileUploadService;
 
     @Autowired
     private SecurityUtil securityUtil;
@@ -252,28 +255,17 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
     }
 
     // ==================== 异步导入入口 ====================
-    // 核心思路：文件保存 → 创建任务 → 提交线程池 → 立即返回
-    // HTTP 请求不阻塞等待，用户可继续其他操作
-    public ResponseDTO createImportTask(MultipartFile file) throws IOException {
-        if (file == null || file.isEmpty()) {
-            return Response.error("上传文件不能为空");
-        }
-        String originalFilename = file.getOriginalFilename();
-        if (originalFilename == null || !originalFilename.toLowerCase().endsWith(".xlsx")) {
-            return Response.error("仅支持 xlsx 文件");
-        }
-        // 保存到磁盘，后续异步线程从磁盘流式读取
-        File sourceFile = fileTaskService.buildTaskFile("task-source", originalFilename);
-        file.transferTo(sourceFile);
+    // 通过三阶段上传完成后创建异步导入任务
+    public ResponseDTO createImportTask(String uploadId) {
+        String mergedKey = fileUploadService.completeUpload(uploadId);
         FileTask fileTask = fileTaskService.createTask(
                 TaskTypeEnum.IMPORT,
                 TaskModuleEnum.ATTENDANCE,
-                originalFilename,
-                sourceFile.getAbsolutePath(),
+                "attendance_import.xlsx",
+                mergedKey,
                 null,
                 getCurrentOperatorId()
         );
-        // 提交到独立线程池，不占用 HTTP 请求线程
         fileTaskExecutor.execute(() -> runImportTask(fileTask.getId()));
         return Response.success("导入任务已创建", fileTask);
     }
@@ -306,7 +298,7 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
     public ResponseDTO setAttendance(Attendance attendance) {
         QueryWrapper<Attendance> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("staff_id", attendance.getStaffId()).eq("attendance_date", attendance.getAttendanceDate());
-        if (saveOrUpdate(attendance, queryWrapper)) {
+        if (update(attendance, queryWrapper) || save(attendance)) {
             return Response.success();
         }
         return Response.error();

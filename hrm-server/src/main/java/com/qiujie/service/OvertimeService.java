@@ -80,7 +80,7 @@ public class OvertimeService extends ServiceImpl<OvertimeMapper, Overtime> {
     public ResponseDTO setOvertime(Overtime overtime) {
         QueryWrapper<Overtime> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("dept_id", overtime.getDeptId()).eq("type_num", overtime.getTypeNum());
-        if (saveOrUpdate(overtime, queryWrapper)) {
+        if (update(overtime, queryWrapper) || save(overtime)) {
             return Response.success();
         }
         return Response.error();

@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
-import io.swagger.annotations.ApiModel;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
@@ -15,7 +15,7 @@ import java.sql.Timestamp;
 @Data
 @Accessors(chain = true)
 @TableName("file_task_error")
-@ApiModel(value = "FileTaskError", description = "导入任务错误明细")
+@Schema(description = "FileTaskError - 导入任务错误明细")
 public class FileTaskError implements Serializable {
 
     private static final long serialVersionUID = 1L;

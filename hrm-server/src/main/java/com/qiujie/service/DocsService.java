@@ -2,8 +2,6 @@ package com.qiujie.service;
 
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.io.IoUtil;
-import cn.hutool.core.util.IdUtil;
-import cn.hutool.crypto.SecureUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -12,10 +10,10 @@ import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
 import com.qiujie.entity.Docs;
 import com.qiujie.enums.BusinessStatusEnum;
-import com.qiujie.exception.ServiceException;
 import com.qiujie.mapper.DocsMapper;
 import com.qiujie.util.HutoolExcelUtil;
 import com.qiujie.util.StorageCompressor;
+import com.qiujie.storage.MinioStorageService;
 import com.qiujie.vo.StaffDocsVO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,18 +24,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.annotation.Resource;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.FileInputStream;
+
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.rmi.ServerError;
-import java.rmi.ServerException;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -55,122 +50,11 @@ public class DocsService extends ServiceImpl<DocsMapper, Docs> {
 
     private static final Logger log = LoggerFactory.getLogger(DocsService.class);
 
-    @Value("${file-path}")
-    private String filePath;
-
     @Autowired
-    private OssService ossService;
+    private MinioStorageService storageService;
 
     @Autowired
     private DocsMapper docsMapper;
-
-    /**
-     * 允许上传的文件类型白名单
-     */
-    private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
-        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",  // 文档
-        "jpg", "jpeg", "png", "gif", "bmp", "svg",           // 图片
-        "txt", "csv", "xml", "json",                         // 文本
-        "zip", "rar", "7z", "tar", "gz"                      // 压缩包
-    );
-
-    @Value("${docs.max-file-size:52428800}")
-    private long maxFileSize;  // 默认 50MB
-
-    /**
-     * document upload
-     *
-     * @param uploadFile
-     * @param id
-     * @return
-     * @throws IOException
-     */
-    public ResponseDTO upload(MultipartFile uploadFile, Integer id) throws IOException {
-        // 判断上传的文件是否为空
-        if (uploadFile.isEmpty()) {
-            return Response.error(BusinessStatusEnum.FILE_NOT_EXIST);
-        }
-
-        // 显式验证文件大小
-        if (uploadFile.getSize() > maxFileSize) {
-            return Response.error("文件大小超过限制，最大允许 " + (maxFileSize / 1024 / 1024) + "MB");
-        }
-
-        String originalFilename = uploadFile.getOriginalFilename();
-        String extName = FileUtil.extName(originalFilename);
-
-        // 文件类型白名单验证
-        if (!ALLOWED_EXTENSIONS.contains(extName.toLowerCase())) {
-            return Response.error("不支持的文件类型: " + extName);
-        }
-
-        // 一次性读取全部字节，避免多次 IO
-        byte[] rawBytes = uploadFile.getBytes();
-        String filename = IdUtil.fastSimpleUUID().substring(2, 22) + "." + extName;
-        String md5 = SecureUtil.md5(new ByteArrayInputStream(rawBytes));
-        List<Docs> docsList = list(new QueryWrapper<Docs>().eq("md5", md5));
-
-        StorageCompressor.CompressionResult result;
-        long storedSize;
-        // 若文件已经存在，则不用上传，复用已有文件信息
-        if (!docsList.isEmpty()) {
-            Docs existing = docsList.get(0);
-            filename = existing.getName();
-            storedSize = existing.getStoredSize() != null ? existing.getStoredSize() : rawBytes.length;
-            // 如果启用了 OSS 但文件不在 OSS，则补传（兼容迁移前数据）
-            if (ossService != null && ossService.isEnabled() && !ossService.exists(filename)) {
-                result = new StorageCompressor.CompressionResult(rawBytes, false);
-                storedSize = rawBytes.length;
-                try {
-                    ossService.put(filename, new ByteArrayInputStream(rawBytes), uploadFile.getContentType());
-                } catch (Exception e) {
-                    log.error("OSS文件上传失败, filename={}", filename, e);
-                    throw new ServiceException(BusinessStatusEnum.FILE_UPLOAD_ERROR.getCode(),
-                            BusinessStatusEnum.FILE_UPLOAD_ERROR.getMessage() + ": " + e.getMessage());
-                }
-            } else {
-                result = new StorageCompressor.CompressionResult(rawBytes,
-                        existing.getCompressed() != null && existing.getCompressed() == 1);
-            }
-        } else {
-            result = StorageCompressor.tryCompress(rawBytes, extName.toLowerCase());
-            storedSize = (long) result.bytes.length;
-            try {
-                if (ossService != null && ossService.isEnabled()) {
-                    ossService.put(filename, new ByteArrayInputStream(result.bytes), uploadFile.getContentType());
-                } else {
-                    File fold = new File(filePath);
-                    if (!fold.exists() && !fold.mkdirs()) {
-                        log.error("文件上传失败: 无法创建目录, filePath={}", filePath);
-                        throw new ServiceException(BusinessStatusEnum.FILE_WRITE_ERROR.getCode(),
-                                "无法创建目录: " + filePath);
-                    }
-                    FileUtil.writeBytes(result.bytes, new File(filePath, filename));
-                }
-                if (result.compressed) {
-                    log.info("文件压缩存储: {} ({} -> {} bytes)", filename, rawBytes.length, result.bytes.length);
-                }
-            } catch (Exception e) {
-                log.error("文件上传失败, filePath={}, filename={}", filePath, filename, e);
-                throw new ServiceException(BusinessStatusEnum.FILE_UPLOAD_ERROR.getCode(),
-                        BusinessStatusEnum.FILE_UPLOAD_ERROR.getMessage() + ": " + e.getMessage());
-            }
-        }
-        // 将文件数据保存到数据库
-        Docs docs = new Docs().setName(filename)
-                .setStaffId(id)
-                .setType(extName)
-                .setOldName(originalFilename)
-                .setMd5(md5)
-                .setSize((long) rawBytes.length / 1024) // 原始大小 KB
-                .setStoredSize(storedSize)
-                .setCompressed(result.compressed ? 1 : 0);
-        if (!save(docs)) {
-            return Response.error();
-        }
-        return Response.success("文件上传成功！", docs);
-    }
-
 
     /**
      * 在文件下载以及数据导出时，响应对象是可以不用作为方法返回值返回的，其在方法执行时已经开始输出，
@@ -186,22 +70,11 @@ public class DocsService extends ServiceImpl<DocsMapper, Docs> {
         response.addHeader("Content-Disposition", "attachment;filename=" + URLEncoder.encode(filename, StandardCharsets.UTF_8));
 
         // 流式下载：不将整个文件加载到内存
-        InputStream rawStream;
-        if (ossService != null && ossService.isEnabled()) {
-            if (!ossService.exists(filename)) {
-                response.sendError(HttpServletResponse.SC_NOT_FOUND);
-                return;
-            }
-            rawStream = ossService.get(filename);
-        } else {
-            File file = resolveStoredFile(filename);
-            if (file == null || !file.exists() || !file.isFile()) {
-                response.sendError(HttpServletResponse.SC_NOT_FOUND);
-                return;
-            }
-            rawStream = new FileInputStream(file);
-            response.addHeader("Content-Length", String.valueOf(file.length()));
+        if (!storageService.exists(filename)) {
+            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            return;
         }
+        InputStream rawStream = storageService.get(filename);
 
         try (InputStream in = rawStream) {
             // 探测是否压缩数据
@@ -230,16 +103,6 @@ public class DocsService extends ServiceImpl<DocsMapper, Docs> {
             }
             out.flush();
         }
-    }
-
-    private File resolveStoredFile(String filename) throws IOException {
-        File baseDir = new File(filePath).getCanonicalFile();
-        File file = new File(baseDir, filename).getCanonicalFile();
-        String basePath = baseDir.getPath();
-        if (!file.getPath().equals(basePath) && file.getPath().startsWith(basePath + File.separator)) {
-            return file;
-        }
-        return null;
     }
 
 
@@ -313,6 +176,28 @@ public class DocsService extends ServiceImpl<DocsMapper, Docs> {
         HutoolExcelUtil.writeExcel(response, list, filename, Docs.class);
     }
 
+    private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
+            "jpg", "jpeg", "png", "gif", "bmp", "webp");
+
+    /**
+     * 头像上传（小文件直传 MinIO），复用文件名前缀兼容旧逻辑
+     */
+    public ResponseDTO upload(MultipartFile file, Integer staffId) throws IOException {
+        if (file.isEmpty()) {
+            return Response.error(BusinessStatusEnum.FILE_NOT_EXIST);
+        }
+        String originalFilename = file.getOriginalFilename();
+        String extName = FileUtil.extName(originalFilename);
+        if (!ALLOWED_EXTENSIONS.contains(extName.toLowerCase())) {
+            return Response.error("不支持的文件类型: " + extName);
+        }
+        String filename = cn.hutool.core.util.IdUtil.fastSimpleUUID().substring(2, 22) + "." + extName;
+        storageService.put(filename, file.getBytes());
+        Map<String, Object> result = new HashMap<>();
+        result.put("name", filename);
+        return Response.success(result);
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public ResponseDTO imp(MultipartFile file) throws IOException {
         InputStream inputStream = file.getInputStream();
@@ -337,38 +222,16 @@ public class DocsService extends ServiceImpl<DocsMapper, Docs> {
 
         long cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000;
 
-        // 本地文件系统：遍历 file-path 下普通文件，排除 task- 子目录
-        File baseDir = new File(filePath);
-        File[] files = baseDir.listFiles(f -> f.isFile());
-        if (files != null) {
-            for (File file : files) {
-                if (file.lastModified() > cutoff) {
-                    continue;
-                }
-                if (dbFilenames.contains(file.getName())) {
-                    continue;
-                }
-                if (file.delete()) {
-                    log.info("清理孤儿文件: {} ({} bytes)", file.getName(), file.length());
-                } else {
-                    log.error("清理孤儿文件失败: {}", file.getAbsolutePath());
-                }
+        for (String key : storageService.listKeys()) {
+            if (dbFilenames.contains(key)) {
+                continue;
             }
-        }
-
-        // OSS：遍历所有 object，清理无 DB 引用且 over 24h 的
-        if (ossService != null && ossService.isEnabled()) {
-            for (String key : ossService.listKeys()) {
-                if (dbFilenames.contains(key)) {
-                    continue;
-                }
-                Date lastModified = ossService.getLastModified(key);
-                if (lastModified != null && lastModified.getTime() > cutoff) {
-                    continue;
-                }
-                ossService.delete(key);
-                log.info("清理OSS孤儿对象: {}", key);
+            Date lastModified = storageService.getLastModified(key);
+            if (lastModified != null && lastModified.getTime() > cutoff) {
+                continue;
             }
+            storageService.delete(key);
+            log.info("清理孤儿文件: {}", key);
         }
     }
 

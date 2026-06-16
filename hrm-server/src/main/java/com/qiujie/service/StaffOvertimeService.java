@@ -37,8 +37,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.annotation.Resource;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -88,6 +88,12 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
 
     @Autowired
     private SecurityUtil securityUtil;
+
+    @Autowired
+    private FileUploadService fileUploadService;
+
+    @Autowired
+    private com.qiujie.storage.MinioStorageService storageService;
 
     @Autowired(required = false)
     private AiHeaderMatcherImpl aiHeaderMatcher;
@@ -267,7 +273,7 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
             QueryWrapper<StaffOvertime> queryWrapper = new QueryWrapper<>();
             queryWrapper.eq("staff_id", staff.getId()).eq("overtime_date",
                     staffOvertime.getOvertimeDate());
-            if (!saveOrUpdate(staffOvertime, queryWrapper)) {
+            if (!update(staffOvertime, queryWrapper) || save(staffOvertime)) {
                 return Response.error(BusinessStatusEnum.DATA_IMPORT_ERROR);
             }
 
@@ -367,7 +373,7 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
         }
         queryWrapper.eq("staff_id", staff.getId()).eq("overtime_date",
                 staffOvertime.getOvertimeDate());
-        if (saveOrUpdate(staffOvertime, queryWrapper)) {
+        if (update(staffOvertime, queryWrapper) || save(staffOvertime)) {
             return Response.success();
         }
         return Response.error();
@@ -386,12 +392,11 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
 
     // ==================== 异步导入导出 ====================
 
-    public ResponseDTO createImportTask(MultipartFile file) throws IOException {
-        File taskFile = fileTaskService.buildTaskFile("task-source", file.getOriginalFilename());
-        file.transferTo(taskFile);
+    public ResponseDTO createImportTask(String uploadId) {
+        String mergedKey = fileUploadService.completeUpload(uploadId);
         FileTask task = fileTaskService.createTask(TaskTypeEnum.IMPORT,
-                TaskModuleEnum.STAFF_OVERTIME, file.getOriginalFilename(),
-                taskFile.getAbsolutePath(), null, securityUtil.getCurrentOperatorId());
+                TaskModuleEnum.STAFF_OVERTIME, "overtime_import.xlsx",
+                mergedKey, null, securityUtil.getCurrentOperatorId());
         fileTaskExecutor.execute(() -> runImportTask(task.getId()));
         Map<String, Object> data = new HashMap<>();
         data.put("taskId", task.getId());
@@ -418,8 +423,9 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
         try {
             // 使用 FlexibleExcelImporter：无需 @ExcelProperty 注解，列序无关
             Map<String, String> mapping = ColumnMappingRegistry.get(TaskModuleEnum.STAFF_OVERTIME);
+            File sourceFile = resolveImportFile(task.getSourceFilePath());
             List<FlexibleExcelImporter.ImportResult<OvertimeImportRow>> results =
-                    FlexibleExcelImporter.parse(new java.io.FileInputStream(task.getSourceFilePath()),
+                    FlexibleExcelImporter.parse(new java.io.FileInputStream(sourceFile),
                             2, TaskModuleEnum.STAFF_OVERTIME, OvertimeImportRow.class, aiHeaderMatcher);
 
             List<OvertimeImportRow> buffer = new ArrayList<>(500);
@@ -547,7 +553,7 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
                 for (StaffOvertime entity : validList) {
                     QueryWrapper<StaffOvertime> qw = new QueryWrapper<>();
                     qw.eq("staff_id", entity.getStaffId()).eq("overtime_date", entity.getOvertimeDate());
-                    saveOrUpdate(entity, qw);
+                    if (!update(entity, qw)) { save(entity); }
                 }
             }
         }
@@ -598,6 +604,20 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
             page.setTotal(list.size());
             return page;
         }
+    }
+
+    private File resolveImportFile(String path) {
+        if (path == null || path.contains(File.separator) || path.startsWith("/")) {
+            return new File(path);
+        }
+        File tempFile = new File(System.getProperty("java.io.tmpdir") + File.separator + "hrm", path);
+        tempFile.getParentFile().mkdirs();
+        try (java.io.InputStream in = storageService.get(path)) {
+            cn.hutool.core.io.FileUtil.writeFromStream(in, tempFile);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to download from MinIO: " + path, e);
+        }
+        return tempFile;
     }
 }
 

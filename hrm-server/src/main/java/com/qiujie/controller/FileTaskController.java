@@ -1,15 +1,21 @@
 package com.qiujie.controller;
 
+import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
 import com.qiujie.service.FileTaskService;
-import io.swagger.annotations.ApiOperation;
+import com.qiujie.service.FileUploadService;
+import com.qiujie.util.SecurityUtil;
+import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/file-task")
@@ -18,13 +24,19 @@ public class FileTaskController {
     @Autowired
     private FileTaskService fileTaskService;
 
-    @ApiOperation("SSE 订阅任务状态更新")
+    @Autowired
+    private FileUploadService fileUploadService;
+
+    @Autowired
+    private SecurityUtil securityUtil;
+
+    @Operation(summary = "SSE 订阅任务状态更新")
     @GetMapping(value = "/subscribe", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter subscribe() {
         return this.fileTaskService.subscribeSse();
     }
 
-    @ApiOperation("查询文件任务")
+    @Operation(summary = "查询文件任务")
     @GetMapping
     public ResponseDTO list(@RequestParam(defaultValue = "1") Integer current,
                             @RequestParam(defaultValue = "10") Integer size,
@@ -33,13 +45,13 @@ public class FileTaskController {
         return this.fileTaskService.list(current, size, taskType, module);
     }
 
-    @ApiOperation("查询文件任务详情")
+    @Operation(summary = "查询文件任务详情")
     @GetMapping("/{id}")
     public ResponseDTO query(@PathVariable Long id) {
         return this.fileTaskService.query(id);
     }
 
-    @ApiOperation("查询导入错误明细")
+    @Operation(summary = "查询导入错误明细")
     @GetMapping("/{id}/errors")
     public ResponseDTO queryErrors(@PathVariable Long id,
                                    @RequestParam(defaultValue = "1") Integer current,
@@ -47,10 +59,54 @@ public class FileTaskController {
         return this.fileTaskService.queryErrors(id, current, size);
     }
 
-    @ApiOperation("下载任务文件")
+    @Operation(summary = "下载任务文件")
     @GetMapping("/{id}/download")
     public void download(@PathVariable Long id, @RequestParam(defaultValue = "RESULT") String fileType,
                          HttpServletResponse response) throws IOException {
         this.fileTaskService.download(id, fileType, response);
+    }
+
+    // ========== 分片上传（三阶段协议）==========
+
+    @Operation(summary = "分片上传-初始化")
+    @PostMapping("/upload/init")
+    @PreAuthorize("hasAnyAuthority('system:docs:upload','performance:attendance:import','performance:overtime:import','performance:leave:import','money:salary:import')")
+    public ResponseDTO initUpload(@RequestBody Map<String, Object> request) {
+        String fileName = (String) request.get("fileName");
+        String fileExt = (String) request.get("fileExt");
+        Long fileSize = ((Number) request.get("fileSize")).longValue();
+        String fileHash = (String) request.get("fileHash");
+        Long chunkSize = request.get("chunkSize") != null
+                ? ((Number) request.get("chunkSize")).longValue() : 5 * 1024 * 1024L;
+
+        return fileUploadService.initUpload(fileName, fileExt, fileSize, fileHash, chunkSize,
+                securityUtil.getCurrentOperatorId(), null);
+    }
+
+    @Operation(summary = "分片上传-上传分片")
+    @PreAuthorize("hasAnyAuthority('system:docs:upload','performance:attendance:import','performance:overtime:import','performance:leave:import','money:salary:import')")
+    @PostMapping("/upload/chunks")
+    public ResponseDTO uploadChunk(
+            @RequestParam("uploadId") String uploadId,
+            @RequestParam("chunkIndex") Integer chunkIndex,
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
+        return fileUploadService.uploadChunk(uploadId, chunkIndex, file);
+    }
+
+    @PreAuthorize("hasAnyAuthority('system:docs:upload','performance:attendance:import','performance:overtime:import','performance:leave:import','money:salary:import')")
+    @Operation(summary = "分片上传-完成（不含业务处理，仅合并返回 key）")
+    @PostMapping("/upload/{uploadId}/complete")
+    public ResponseDTO completeUpload(@PathVariable String uploadId) {
+        String mergedKey = fileUploadService.completeUpload(uploadId);
+        Map<String, Object> result = new HashMap<>();
+        result.put("mergedKey", mergedKey);
+        return Response.success(result);
+    }
+
+    @PreAuthorize("hasAnyAuthority('system:docs:upload','performance:attendance:import','performance:overtime:import','performance:leave:import','money:salary:import')")
+    @Operation(summary = "小文件直接上传（< 5MB 不走分片）")
+    @PostMapping("/upload/direct")
+    public ResponseDTO uploadDirect(@RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
+        return fileUploadService.uploadDirect(file, securityUtil.getCurrentOperatorId());
     }
 }

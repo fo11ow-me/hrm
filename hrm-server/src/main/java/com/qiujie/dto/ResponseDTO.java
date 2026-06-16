@@ -1,28 +1,31 @@
 package com.qiujie.dto;
 
 import com.qiujie.enums.BaseEnum;
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.NoArgsConstructor;
+import io.swagger.v3.oas.annotations.media.Schema;
 import org.apache.poi.ss.formula.functions.T;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-@ApiModel(value = "数据传输对象", description = "")
+@Schema(description = "数据传输对象 - ")
 public class ResponseDTO {
-    @ApiModelProperty("状态码")
+    @Schema(description = "状态码")
     private int code;
 
-    @ApiModelProperty("响应消息")
+    @Schema(description = "响应消息")
     private String message;
 
-    @ApiModelProperty("响应数据")
+    @Schema(description = "响应数据")
     private Object data;
 
-    @ApiModelProperty("token")
+    @Schema(description = "token")
     private String token;
 
     public ResponseDTO(int code, String message){

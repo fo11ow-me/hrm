@@ -1,5 +1,6 @@
 package com.qiujie.service;
 
+import cn.hutool.core.io.FileUtil;
 import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.ExcelWriter;
 import com.alibaba.excel.context.AnalysisContext;
@@ -9,10 +10,12 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.qiujie.entity.FileTask;
 import com.qiujie.entity.FileTaskError;
 import com.qiujie.enums.TaskStatusEnum;
+import com.qiujie.storage.MinioStorageService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -36,6 +39,9 @@ public class FileTaskEngine {
     @Autowired
     private FileTaskErrorService fileTaskErrorService;
 
+    @Autowired
+    private MinioStorageService storageService;
+
     /**
      * 执行异步导入。
      * 使用 EasyExcel 流式读取，每攒够 IMPORT_BATCH_SIZE 行交给 processor 批量处理，
@@ -50,9 +56,10 @@ public class FileTaskEngine {
         if (task == null) {
             return;
         }
+        File sourceFile = resolveSourceFile(task.getSourceFilePath());
         List<T> buffer = new ArrayList<>(IMPORT_BATCH_SIZE);
         try {
-            EasyExcel.read(task.getSourceFilePath(), processor.getRowClass(),
+            EasyExcel.read(sourceFile, processor.getRowClass(),
                     new AnalysisEventListener<T>() {
                         @Override
                         public void invoke(T data, AnalysisContext context) {
@@ -131,12 +138,29 @@ public class FileTaskEngine {
                 fileTaskService.increaseProgress(taskId, 0, list.size(), list.size(), 0);
                 current++;
             } while (current <= page.getPages());
-            fileTaskService.setResultFile(taskId, resultFile.getAbsolutePath());
+            fileTaskService.setResultFile(taskId, fileTaskService.uploadToMinio(resultFile, "task-result"));
             fileTaskService.finish(taskId, TaskStatusEnum.SUCCESS);
         } catch (Exception e) {
             fileTaskService.fail(taskId, e);
         } finally {
             excelWriter.finish();
         }
+    }
+
+    /**
+     * 解析源文件。若为 MinIO key 则下载到临时文件，否则直接返回本地文件引用。
+     */
+    private File resolveSourceFile(String path) {
+        if (path == null || path.contains(File.separator) || path.startsWith("/")) {
+            return new File(path);
+        }
+        File tempFile = new File(System.getProperty("java.io.tmpdir") + File.separator + "hrm", path);
+        tempFile.getParentFile().mkdirs();
+        try (InputStream in = storageService.get(path)) {
+            FileUtil.writeFromStream(in, tempFile);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to download source file from MinIO: " + path, e);
+        }
+        return tempFile;
     }
 }

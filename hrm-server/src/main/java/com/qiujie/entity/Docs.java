@@ -1,14 +1,18 @@
 package com.qiujie.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import io.swagger.v3.oas.annotations.media.Schema;
 import com.fasterxml.jackson.annotation.JsonFormat;
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.io.Serializable;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.sql.Timestamp;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * <p>
@@ -21,7 +25,7 @@ import java.sql.Timestamp;
 @Data
 @Accessors(chain = true)
 @TableName("sys_docs")
-@ApiModel(value = "Docs对象", description = "文件管理")
+@Schema(description = "Docs对象 - 文件管理")
 public class Docs implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -29,53 +33,53 @@ public class Docs implements Serializable {
     @TableId(value = "id", type = IdType.AUTO)
     private Integer id;
 
-    @ApiModelProperty("文件名称")
+    @Schema(description = "文件名称")
     @TableField("name")
     private String name;
 
-    @ApiModelProperty("文件类型")
+    @Schema(description = "文件类型")
     @TableField("type")
     private String type;
 
-    @ApiModelProperty("文件原名称")
+    @Schema(description = "文件原名称")
     @TableField("old_name")
     private String oldName;
 
-    @ApiModelProperty("文件md5信息")
-    @TableField("md5")
-    private String md5;
+    @Schema(description = "文件SHA256哈希")
+    @TableField("file_hash")
+    private String fileHash;
 
-    @ApiModelProperty("文件原始大小kB")
+    @Schema(description = "文件原始大小kB")
     @TableField("size")
     private Long size;
 
-    @ApiModelProperty("磁盘实际占用(字节)")
+    @Schema(description = "磁盘实际占用(字节)")
     @TableField("stored_size")
     private Long storedSize;
 
-    @ApiModelProperty("是否zstd压缩: 0=否 1=是")
+    @Schema(description = "是否zstd压缩: 0=否 1=是")
     @TableField("compressed")
     private Integer compressed;
 
-    @ApiModelProperty("文件上传者id")
+    @Schema(description = "文件上传者id")
     @TableField("staff_id")
     private Integer staffId;
 
-    @ApiModelProperty("员工备注")
+    @Schema(description = "员工备注")
     @TableField("remark")
     private String remark;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss",timezone = "GMT+8")
-    @ApiModelProperty("创建时间")
+    @Schema(description = "创建时间")
     @TableField("create_time")
     private Timestamp createTime;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss",timezone = "GMT+8")
-    @ApiModelProperty("修改时间")
+    @Schema(description = "修改时间")
     @TableField("update_time")
     private Timestamp updateTime;
 
-    @ApiModelProperty("0未删除，1已删除，默认为0")
+    @Schema(description = "0未删除，1已删除，默认为0")
     @TableField("is_deleted")
     @TableLogic
     private Integer deleteFlag;

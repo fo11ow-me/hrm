@@ -1,17 +1,24 @@
 package com.qiujie.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import io.swagger.v3.oas.annotations.media.Schema;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import io.swagger.v3.oas.annotations.media.Schema;
 import com.qiujie.enums.AuditStatusEnum;
+import io.swagger.v3.oas.annotations.media.Schema;
 import com.qiujie.enums.LeaveEnum;
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Setter;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.io.Serializable;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.sql.Date;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.sql.Timestamp;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * <p>
@@ -24,7 +31,7 @@ import java.sql.Timestamp;
 @Getter
 @Setter
 @TableName("att_staff_leave")
-@ApiModel(value = "StaffLeave对象", description = "")
+@Schema(description = "StaffLeave对象 - ")
 public class StaffLeave implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -32,26 +39,26 @@ public class StaffLeave implements Serializable {
     @TableId(value = "id", type = IdType.AUTO)
     private Integer id;
 
-    @ApiModelProperty("员工id")
+    @Schema(description = "员工id")
     @TableField("staff_id")
     private Integer staffId;
 
-    @ApiModelProperty("请假的天数")
+    @Schema(description = "请假的天数")
     @TableField("days")
     private Integer days;
 
     @TableField("type_num")
     private LeaveEnum typeNum;
 
-    @ApiModelProperty("请假的起始日期")
+    @Schema(description = "请假的起始日期")
     @TableField("start_date")
     private Date startDate;
 
-    @ApiModelProperty("0待审核，1审核通过，2驳回，3撤销，4审核中")
+    @Schema(description = "0待审核，1审核通过，2驳回，3撤销，4审核中")
     @TableField("status")
     private AuditStatusEnum status;
 
-    @ApiModelProperty("审批意见")
+    @Schema(description = "审批意见")
     @TableField("audit_remark")
     private String auditRemark;
 
@@ -59,16 +66,16 @@ public class StaffLeave implements Serializable {
     private String remark;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
-    @ApiModelProperty("创建时间")
+    @Schema(description = "创建时间")
     @TableField("create_time")
     private Timestamp createTime;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
-    @ApiModelProperty("更新时间")
+    @Schema(description = "更新时间")
     @TableField("update_time")
     private Timestamp updateTime;
 
-    @ApiModelProperty("逻辑删除，0未删除，1删除")
+    @Schema(description = "逻辑删除，0未删除，1删除")
     @TableField("is_deleted")
     @TableLogic
     private Integer deleteFlag;

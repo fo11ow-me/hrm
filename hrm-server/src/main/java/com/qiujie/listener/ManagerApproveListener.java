@@ -15,8 +15,8 @@ import com.qiujie.mapper.StaffOvertimeMapper;
 import com.qiujie.service.AttendanceService;
 import com.qiujie.service.StaffLeaveService;
 import com.qiujie.util.DatetimeUtil;
-import org.activiti.engine.delegate.DelegateExecution;
-import org.activiti.engine.delegate.ExecutionListener;
+import org.flowable.engine.delegate.DelegateExecution;
+import org.flowable.engine.delegate.ExecutionListener;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,8 +61,16 @@ public class ManagerApproveListener implements ExecutionListener {
             }
             QueryWrapper<Attendance> queryWrapper = new QueryWrapper<>();
             queryWrapper.eq("staff_id", attendance.getStaffId()).eq("attendance_date", attendance.getAttendanceDate());
-            if (!this.attendanceService.saveOrUpdate(attendance, queryWrapper)) {
-                throw new ServiceException(BusinessStatusEnum.ERROR);
+            Attendance existing = this.attendanceService.getOne(queryWrapper);
+            if (existing != null) {
+                attendance.setId(existing.getId());
+                if (!this.attendanceService.updateById(attendance)) {
+                    throw new ServiceException(BusinessStatusEnum.ERROR);
+                }
+            } else {
+                if (!this.attendanceService.save(attendance)) {
+                    throw new ServiceException(BusinessStatusEnum.ERROR);
+                }
             }
         }
     }

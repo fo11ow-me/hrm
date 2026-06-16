@@ -16,7 +16,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -42,8 +42,10 @@ public class StaffDetailsService implements UserDetailsService {
         List<Menu> menuList = this.menuMapper.queryPermission(staff.getId());
         List<GrantedAuthority> list = new ArrayList<>();
         for (Menu menu : menuList) {
-            SimpleGrantedAuthority simpleGrantedAuthority = new SimpleGrantedAuthority(menu.getPermission());
-            list.add(simpleGrantedAuthority);
+            if (menu.getPermission() == null || menu.getPermission().isEmpty()) {
+                continue;
+            }
+            list.add(new SimpleGrantedAuthority(menu.getPermission()));
         }
         return new StaffDetails(username, staff.getPassword(), list,
                 true, true, true, true);

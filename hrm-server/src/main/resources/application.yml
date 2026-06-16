@@ -12,17 +12,18 @@ spring:
       password: ${DB_PASSWORD}
       driver-class-name: com.mysql.cj.jdbc.Driver
       type: com.zaxxer.hikari.HikariDataSource
-    activiti:
-      jdbc-url: ${DB_ACTIVITI_URL}
+    flowable:
+      jdbc-url: ${DB_FLOWABLE_URL}
       username: ${DB_USERNAME}
       password: ${DB_PASSWORD}
       driver-class-name: com.mysql.cj.jdbc.Driver
       type: com.zaxxer.hikari.HikariDataSource
-
-  activiti:
-    database-schema-update: ${ACTIVITI_SCHEMA_UPDATE:true}
-    history-level: full
-    db-history-used: true
+    kb:
+      jdbc-url: ${KB_DB_URL:jdbc:postgresql://localhost:5432/hrm_kb}
+      username: ${KB_DB_USERNAME:postgres}
+      password: ${KB_DB_PASSWORD:postgres}
+      driver-class-name: org.postgresql.Driver
+      type: com.zaxxer.hikari.HikariDataSource
 
   servlet:
     multipart:
@@ -31,7 +32,7 @@ spring:
       max-request-size: ${MAX_REQUEST_SIZE:30MB}
 
   redis:
-    host: ${REDIS_HOST}
+    host: ${REDIS_HOST:127.0.0.1}
     port: ${REDIS_PORT:6379}
     password: ${REDIS_PASSWORD}
     database: ${REDIS_DATABASE:0}
@@ -41,12 +42,18 @@ spring:
         max-active: 32
         min-idle: 8
 
-  mvc:
-    pathmatch:
-      matching-strategy: ant-path-matcher
-
   main:
     allow-bean-definition-overriding: true
+
+  ai:
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        options:
+          model: ${OLLAMA_CHAT_MODEL:minimax-m3:cloud}
+      embedding:
+        options:
+          model: ${OLLAMA_EMBEDDING_MODEL:nomic-embed-text}
 
 mybatis-plus:
   configuration:
@@ -65,14 +72,6 @@ management:
       probes:
         enabled: true
 
-file-path: ${FILE_STORAGE_PATH:/opt/app/hrm/files}
-
-oss:
-  endpoint: ${OSS_ENDPOINT:}
-  access-key-id: ${OSS_ACCESS_KEY_ID:}
-  access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
-  bucket-name: ${OSS_BUCKET_NAME:}
-
 jwt:
   secret: ${JWT_SECRET}
 
@@ -87,6 +86,29 @@ assistant:
     base-url: ${ASSISTANT_PROVIDER_BASE_URL:}
     api-key: ${ASSISTANT_PROVIDER_API_KEY:}
     model: ${ASSISTANT_PROVIDER_MODEL:}
+
+# MinIO 对象存储
+storage:
+  minio:
+    endpoint: ${MINIO_ENDPOINT:}
+    access-key: ${MINIO_ACCESS_KEY:}
+    secret-key: ${MINIO_SECRET_KEY:}
+    bucket: ${MINIO_BUCKET:hrm}
+
+# Agent 智能助手配置
+agent:
+  memory:
+    l1-update-interval: ${AGENT_L1_INTERVAL:5}
+    l2-update-interval: ${AGENT_L2_INTERVAL:15}
+    max-tokens: ${AGENT_MAX_TOKENS:50000}
+    keep-recent: ${AGENT_KEEP_RECENT:5}
+
+# 知识库模块配置
+knowledge:
+  enabled: ${KNOWLEDGE_ENABLED:false}
+  chunk:
+    max-size: ${KNOWLEDGE_CHUNK_MAX_SIZE:1000}
+    overlap: ${KNOWLEDGE_CHUNK_OVERLAP:100}
 
 holidays:
   - 2024-01-01

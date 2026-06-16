@@ -1,180 +1,32 @@
 package com.qiujie.assistant;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.qiujie.exception.ServiceException;
+import com.qiujie.common.llm.LlmProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.web.client.RestTemplateBuilder;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
-import org.springframework.web.client.RestTemplate;
-
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 @Component
-public class OpenAiCompatibleAssistantLlmClient implements AssistantLlmClient {
+public class OpenAiCompatibleAssistantLlmClient implements AssistantLlmClient, LlmProvider {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAiCompatibleAssistantLlmClient.class);
 
-    private final AssistantProperties properties;
-    private final RestTemplate restTemplate;
-    private final ObjectMapper objectMapper;
+    private final ChatClient chatClient;
 
-    public OpenAiCompatibleAssistantLlmClient(AssistantProperties properties,
-                                              RestTemplateBuilder restTemplateBuilder,
-                                              ObjectMapper objectMapper) {
-        this.properties = properties;
-        this.objectMapper = objectMapper;
-        this.restTemplate = restTemplateBuilder
-                .setConnectTimeout(Duration.ofSeconds(properties.getTimeoutSeconds()))
-                .setReadTimeout(Duration.ofSeconds(properties.getTimeoutSeconds()))
-                .build();
+    public OpenAiCompatibleAssistantLlmClient(ChatClient.Builder chatClientBuilder) {
+        this.chatClient = chatClientBuilder.build();
     }
 
     @Override
-    public String generate(String question, String toolContext) {
-        return generate(question, toolContext, null);
-    }
-
-    @Override
-    public String generate(String question, String toolContext, List<Map<String, String>> history) {
-        AssistantProperties.Provider provider = properties.getProvider();
-        if (!properties.isEnabled()
-                || provider == null
-                || !StringUtils.hasText(provider.getBaseUrl())
-                || !StringUtils.hasText(provider.getApiKey())
-                || !StringUtils.hasText(provider.getModel())) {
-            return "";
-        }
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setBearerAuth(provider.getApiKey());
-
-        Map<String, Object> body = new HashMap<>();
-        body.put("model", provider.getModel());
-        body.put("temperature", 0.2);
-        body.put("messages", buildMessages(question, toolContext, history));
-
-        ResponseEntity<String> response = restTemplate.postForEntity(
-                resolveEndpoint(provider.getBaseUrl()),
-                new HttpEntity<>(body, headers),
-                String.class
-        );
-        return extractContent(response.getBody());
-    }
-
-    private List<Map<String, String>> buildMessages(String question, String toolContext,
-                                                     List<Map<String, String>> history) {
-        List<Map<String, String>> messages = new ArrayList<>();
-        Map<String, String> system = new HashMap<>();
-        system.put("role", "system");
-        system.put("content", "你是 HRM 系统的员工自助助手。只能基于系统提供的工具结果回答，不能编造数据，不能提供跨员工或跨部门数据。");
-        messages.add(system);
-
-        if (history != null) {
-            messages.addAll(history);
-        }
-
-        Map<String, String> user = new HashMap<>();
-        user.put("role", "user");
-        user.put("content", "用户问题：" + question + "\n系统工具结果：" + toolContext);
-        messages.add(user);
-        return messages;
-    }
-
-    private String resolveEndpoint(String baseUrl) {
-        String normalized = baseUrl.trim();
-        while (normalized.endsWith("/")) {
-            normalized = normalized.substring(0, normalized.length() - 1);
-        }
-        if (normalized.endsWith("/chat/completions")) {
-            return normalized;
-        }
-        return normalized + "/chat/completions";
-    }
-
-    private String extractContent(String body) {
-        if (!StringUtils.hasText(body)) {
-            log.warn("LLM response body is empty");
-            return "";
-        }
+    public String generate(String systemPrompt, String userInput) {
         try {
-            JsonNode root = objectMapper.readTree(body);
-
-            // 检查 API 错误响应
-            if (root.has("error")) {
-                JsonNode error = root.path("error");
-                String errorType = error.path("type").asText("unknown");
-                String errorMsg = error.path("message").asText("Unknown error");
-
-                log.error("LLM API error: type={}, message={}", errorType, errorMsg);
-
-                // 根据错误类型返回不同的提示
-                if ("insufficient_quota".equals(errorType) || "rate_limit_exceeded".equals(errorType)) {
-                    throw new ServiceException(500, "AI 服务配额不足或请求过于频繁，请稍后再试");
-                } else if ("invalid_api_key".equals(errorType)) {
-                    throw new ServiceException(500, "AI 服务配置错误，请联系管理员");
-                } else {
-                    throw new ServiceException(500, "AI 服务暂时不可用: " + errorMsg);
-                }
-            }
-
-            // 提取正常响应内容
-            JsonNode choices = root.path("choices");
-            if (choices.isMissingNode() || !choices.isArray() || choices.size() == 0) {
-                log.warn("LLM response missing choices field: {}", body);
-                return "";
-            }
-
-            JsonNode content = choices.path(0).path("message").path("content");
-            if (content.isMissingNode()) {
-                log.warn("LLM response missing content field: {}", body);
-                return "";
-            }
-
-            String result = content.asText("");
-            log.debug("LLM generated {} characters", result.length());
-
-            if (!isValidContent(result)) {
-                log.warn("LLM content validation failed: non-CN ratio too high, {} chars", result.length());
-                return "";
-            }
-            return result;
-
-        } catch (JsonProcessingException e) {
-            log.error("Failed to parse LLM response: {}", body, e);
-            throw new ServiceException(500, "AI 服务响应格式错误");
-        } catch (ServiceException e) {
-            // 重新抛出业务异常
-            throw e;
+            String prompt = systemPrompt != null && !systemPrompt.isBlank()
+                    ? systemPrompt + "\n\n" + userInput
+                    : userInput;
+            return chatClient.prompt().user(prompt).call().content();
         } catch (Exception e) {
-            log.error("Unexpected error parsing LLM response", e);
-            throw new ServiceException(500, "AI 服务响应处理失败");
+            log.error("LLM call failed: {}", e.getMessage());
+            return "抱歉，AI 服务暂时不可用，请稍后重试。";
         }
-    }
-
-    /**
-     * 内容质量校验：非中文字符超过 50% 视为异常输出。
-     */
-    private boolean isValidContent(String text) {
-        if (!StringUtils.hasText(text)) {
-            return false;
-        }
-        long total = text.codePoints().count();
-        long nonCn = text.codePoints()
-                .filter(cp -> !Character.isIdeographic(cp) && cp > 127)
-                .count();
-        return (double) nonCn / total <= 0.5;
     }
 }

@@ -2,7 +2,7 @@ package com.qiujie.controller;
 
 import com.qiujie.service.SseService;
 import com.qiujie.util.SecurityUtil;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,7 +24,7 @@ public class NotificationController {
     @Autowired
     private SecurityUtil securityUtil;
 
-    @ApiOperation("订阅通知（SSE）")
+    @Operation(summary = "订阅通知（SSE）")
     @GetMapping("/subscribe")
     public SseEmitter subscribe() {
         Integer staffId = securityUtil.getCurrentOperatorId();

@@ -20,7 +20,7 @@ import java.util.List;
 public interface StaffLeaveMapper extends BaseMapper<StaffLeave> {
 
 
-    @Select("select * from att_staff_leave where is_deleted = 0 and staff_id = #{id}")
+    @Select("select * from att_staff_leave where is_deleted = 0 and staff_id = #{id} order by create_time desc")
     IPage<StaffLeave> listStaffLeaveByStaffId(IPage<StaffLeave> config, @Param("id") Integer id);
 
     /**

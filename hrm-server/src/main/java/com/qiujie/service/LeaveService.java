@@ -12,7 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 
 import java.util.List;
 
@@ -80,7 +80,7 @@ public class LeaveService extends ServiceImpl<LeaveMapper, Leave> {
     public ResponseDTO setLeave(Leave leave) {
         QueryWrapper<Leave> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("dept_id", leave.getDeptId()).eq("type_num", leave.getTypeNum());
-        if (saveOrUpdate(leave, queryWrapper)) {
+        if (update(leave, queryWrapper) || save(leave)) {
             return Response.success();
         }
         return Response.error();

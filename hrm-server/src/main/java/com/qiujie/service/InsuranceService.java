@@ -18,8 +18,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.annotation.Resource;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
@@ -131,7 +131,7 @@ public class InsuranceService extends ServiceImpl<InsuranceMapper, Insurance> {
     public ResponseDTO setInsurance(Insurance insurance) {
         QueryWrapper<Insurance> queryWrapper = new QueryWrapper();
         queryWrapper.eq("staff_id", insurance.getStaffId());
-        if (saveOrUpdate(insurance, queryWrapper)) {
+        if (update(insurance, queryWrapper) || save(insurance)) {
             return Response.success(BusinessStatusEnum.SUCCESS);
         }
         return Response.error();

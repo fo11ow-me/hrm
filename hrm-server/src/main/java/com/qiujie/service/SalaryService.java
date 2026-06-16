@@ -29,8 +29,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.annotation.Resource;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -69,6 +69,12 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
 
     @Autowired
     private FileTaskService fileTaskService;
+
+    @Autowired
+    private FileUploadService fileUploadService;
+
+    @Autowired
+    private com.qiujie.storage.MinioStorageService storageService;
 
     @Autowired
     @Qualifier("fileTaskExecutor")
@@ -242,7 +248,7 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
         salary.setDaySalary(salary.getBaseSalary().divide(new BigDecimal("21.75"),3, RoundingMode.HALF_UP));
         salary.setHourSalary(salary.getBaseSalary().divide(new BigDecimal(174),3, RoundingMode.HALF_UP));
         query.eq("month", salary.getMonth()).eq("staff_id", salary.getStaffId());
-        if (saveOrUpdate(salary, query)) {
+        if (update(salary, query) || save(salary)) {
             return Response.success();
         }
         return Response.error();
@@ -302,14 +308,12 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
     }
 
     /**
-     * 创建异步导入任务（支持大文件）
+     * 通过三阶段上传完成后创建异步导入任务。
      */
-    public ResponseDTO createImportTask(MultipartFile file) throws IOException {
-        String originalFilename = file.getOriginalFilename();
-        File taskFile = fileTaskService.buildTaskFile("task-source", originalFilename);
-        file.transferTo(taskFile);
+    public ResponseDTO createImportTask(String uploadId) {
+        String mergedKey = fileUploadService.completeUpload(uploadId);
         FileTask task = fileTaskService.createTask(TaskTypeEnum.IMPORT, TaskModuleEnum.SALARY,
-                originalFilename, taskFile.getAbsolutePath(), null, getCurrentOperatorId());
+                "salary_import.xlsx", mergedKey, null, getCurrentOperatorId());
         fileTaskExecutor.execute(() -> runImportTask(task.getId()));
         Map<String, Object> result = new HashMap<>();
         result.put("taskId", task.getId());
@@ -332,18 +336,32 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
         try {
             fileTaskService.markRunning(taskId);
             FileTask task = fileTaskService.getById(taskId);
-            File sourceFile = new File(task.getSourceFilePath());
+            File sourceFile = resolveImportFile(task.getSourceFilePath());
             List<Salary> list = EasyExcelUtil.read(new java.io.FileInputStream(sourceFile), 1, Salary.class);
             fileTaskService.setTotalCount(taskId, list.size());
             if (saveBatch(list)) {
+                fileTaskService.deleteSourceFile(taskId);
                 fileTaskService.finish(taskId, TaskStatusEnum.SUCCESS);
             } else {
                 fileTaskService.finish(taskId, TaskStatusEnum.PARTIAL_SUCCESS);
             }
-            sourceFile.delete();
         } catch (Exception e) {
             fileTaskService.fail(taskId, e);
         }
+    }
+
+    private File resolveImportFile(String path) {
+        if (path == null || path.contains(File.separator) || path.startsWith("/")) {
+            return new File(path);
+        }
+        File tempFile = new File(fileTaskService.buildTaskFile("task-source", "import.xlsx").getParentFile(), path.replace('/', '_'));
+        tempFile.getParentFile().mkdirs();
+        try (java.io.InputStream in = storageService.get(path)) {
+            cn.hutool.core.io.FileUtil.writeFromStream(in, tempFile);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to download from MinIO: " + path, e);
+        }
+        return tempFile;
     }
 
     private void runExportTask(Long taskId, String month, String filename) {
@@ -355,7 +373,7 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
             File file = fileTaskService.buildTaskFile("task-result", exportName + ".xlsx");
             com.alibaba.excel.EasyExcel.write(file, StaffSalaryVO.class).sheet(exportName).doWrite(list);
             fileTaskService.setTotalCount(taskId, list.size());
-            fileTaskService.setResultFile(taskId, file.getAbsolutePath());
+            fileTaskService.setResultFile(taskId, fileTaskService.uploadToMinio(file, "task-result"));
             fileTaskService.finish(taskId, TaskStatusEnum.SUCCESS);
         } catch (Exception e) {
             fileTaskService.fail(taskId, e);

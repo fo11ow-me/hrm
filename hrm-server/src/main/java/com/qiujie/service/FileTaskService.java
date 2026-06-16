@@ -11,30 +11,30 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.qiujie.dto.FileTaskErrorExportRow;
+import com.qiujie.dto.Response;
+import com.qiujie.dto.ResponseDTO;
 import com.qiujie.enums.TaskFileTypeEnum;
 import com.qiujie.enums.TaskModuleEnum;
 import com.qiujie.enums.TaskStatusEnum;
 import com.qiujie.enums.TaskTypeEnum;
-import com.qiujie.dto.Response;
-import com.qiujie.dto.ResponseDTO;
 import com.qiujie.entity.FileTask;
 import com.qiujie.entity.FileTaskError;
 import com.qiujie.mapper.FileTaskMapper;
+import com.qiujie.storage.MinioStorageService;
 import com.qiujie.util.SecurityUtil;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -46,12 +46,10 @@ import java.util.stream.Collectors;
 public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
 
     private static final int ERROR_EXPORT_PAGE_SIZE = 1000;
-
-    @Value("${file-path}")
-    private String filePath;
+    private static final String TEMP_DIR = System.getProperty("java.io.tmpdir") + File.separator + "hrm";
 
     @Autowired
-    private OssService ossService;
+    private MinioStorageService storageService;
 
     @Autowired
     private FileTaskMapper fileTaskMapper;
@@ -80,6 +78,7 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
                 .setFailCount(0)
                 .setOperatorId(operatorId);
         save(fileTask);
+        sseService.emit(fileTask);
         return fileTask;
     }
 
@@ -138,6 +137,7 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
                 .setId(id)
                 .setStatus(TaskStatusEnum.RUNNING)
                 .setStartTime(Timestamp.valueOf(LocalDateTime.now())));
+        pushTaskEvent(id);
     }
 
     public void increaseProgress(Long id, int total, int processed, int success, int fail) {
@@ -196,17 +196,31 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
         pushTaskEvent(id);
     }
 
+    /**
+     * 在临时目录创建任务文件，供 EasyExcel 流式读写。
+     * 临时文件在任务完成后由调用方负责上传至 MinIO 并删除。
+     */
     public File buildTaskFile(String subDir, String originalFilename) {
         String extName = FileUtil.extName(originalFilename);
         String filename = IdUtil.fastSimpleUUID();
         if (extName != null && !"".equals(extName)) {
             filename = filename + "." + extName;
         }
-        File dir = new File(filePath, subDir);
+        File dir = new File(TEMP_DIR, subDir);
         if (!dir.exists()) {
             dir.mkdirs();
         }
         return new File(dir, filename);
+    }
+
+    /**
+     * 将本地临时文件上传至 MinIO，返回存储 key，并删除临时文件。
+     */
+    public String uploadToMinio(File file, String subDir) {
+        String key = subDir + "/" + file.getName();
+        storageService.put(key, FileUtil.readBytes(file));
+        file.delete();
+        return key;
     }
 
     public void generateErrorFile(Long taskId) {
@@ -216,7 +230,6 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
             WriteSheet writeSheet = EasyExcel.writerSheet("errors").build();
             long lastId = 0;
             while (true) {
-                // 游标分页，避免深 OFFSET 导致的性能下降
                 QueryWrapper<FileTaskError> queryWrapper = new QueryWrapper<>();
                 queryWrapper.eq("task_id", taskId).gt("id", lastId)
                         .orderByAsc("id").last("limit " + ERROR_EXPORT_PAGE_SIZE);
@@ -236,7 +249,8 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
         } finally {
             excelWriter.finish();
         }
-        setErrorFile(taskId, errorFile.getAbsolutePath());
+        String key = uploadToMinio(errorFile, "task-error");
+        setErrorFile(taskId, key);
     }
 
     public void download(Long id, String fileType, HttpServletResponse response) throws IOException {
@@ -249,74 +263,45 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
             writeErrorResponse(response, HttpServletResponse.SC_FORBIDDEN, "无权访问该任务");
             return;
         }
-        String path = resolveDownloadPath(fileTask, fileType);
-        if (path == null || "".equals(path)) {
+        String key = resolveDownloadKey(fileTask, fileType);
+        if (key == null || "".equals(key)) {
             writeErrorResponse(response, HttpServletResponse.SC_NOT_FOUND, "文件不存在");
             return;
         }
-        String downloadName = fileTask.getFileName();
-        if (TaskFileTypeEnum.ERROR.getValue().equalsIgnoreCase(fileType)) {
-            downloadName = "import-errors.xlsx";
-        } else if (downloadName == null || "".equals(downloadName)) {
-            downloadName = fileTask.getFileName();
-        }
-        response.addHeader("Content-Type", "application/octet-stream;charset=utf-8");
-        response.addHeader("Content-Disposition", "attachment;filename=" + URLEncoder.encode(downloadName != null ? downloadName : "download", StandardCharsets.UTF_8));
-
-        if (ossService != null && ossService.isEnabled()) {
-            String ossKey = extractOssKey(path);
-            if (ossService.exists(ossKey)) {
-                try (InputStream in = ossService.get(ossKey);
-                     OutputStream out = response.getOutputStream()) {
-                    byte[] buffer = new byte[8192];
-                    int len;
-                    while ((len = in.read(buffer)) != -1) {
-                        out.write(buffer, 0, len);
-                    }
-                    out.flush();
-                }
+        // 兼容旧数据：本地临时文件路径回退
+        if (isLocalPath(key)) {
+            File file = new File(key);
+            if (!file.exists() || !file.isFile()) {
+                writeErrorResponse(response, HttpServletResponse.SC_NOT_FOUND, "文件不存在或已被清理");
                 return;
             }
-            // OSS 未找到时回退到本地文件
-        }
-
-        File file = new File(path);
-        if (!file.exists() || !file.isFile()) {
-            writeErrorResponse(response, HttpServletResponse.SC_NOT_FOUND, "文件不存在或已被清理");
+            try (InputStream in = Files.newInputStream(file.toPath());
+                 OutputStream out = response.getOutputStream()) {
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, len);
+                }
+                out.flush();
+            }
             return;
         }
-        try (FileInputStream inputStream = new FileInputStream(file);
-             OutputStream outputStream = response.getOutputStream()) {
+        if (!storageService.exists(key)) {
+            writeErrorResponse(response, HttpServletResponse.SC_NOT_FOUND, "文件不存在");
+            return;
+        }
+        String downloadName = resolveDownloadName(fileTask, fileType);
+        response.addHeader("Content-Type", "application/octet-stream;charset=utf-8");
+        response.addHeader("Content-Disposition", "attachment;filename=" + URLEncoder.encode(downloadName, StandardCharsets.UTF_8));
+        try (InputStream in = storageService.get(key);
+             OutputStream out = response.getOutputStream()) {
             byte[] buffer = new byte[8192];
             int len;
-            while ((len = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, len);
+            while ((len = in.read(buffer)) != -1) {
+                out.write(buffer, 0, len);
             }
-            outputStream.flush();
+            out.flush();
         }
-    }
-
-    private String extractOssKey(String path) {
-        if (path == null) return null;
-        int idx = path.lastIndexOf('/');
-        if (idx >= 0) {
-            return path.substring(idx + 1);
-        }
-        idx = path.lastIndexOf('\\');
-        if (idx >= 0) {
-            return path.substring(idx + 1);
-        }
-        return path;
-    }
-
-    private String resolveDownloadPath(FileTask fileTask, String fileType) {
-        if (TaskFileTypeEnum.SOURCE.getValue().equalsIgnoreCase(fileType)) {
-            return fileTask.getSourceFilePath();
-        }
-        if (TaskFileTypeEnum.ERROR.getValue().equalsIgnoreCase(fileType)) {
-            return fileTask.getErrorFilePath();
-        }
-        return fileTask.getResultFilePath();
     }
 
     @Scheduled(cron = "0 0 3 * * ?")
@@ -329,7 +314,6 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
             deleteIfExists(task.getSourceFilePath());
             deleteIfExists(task.getResultFilePath());
             deleteIfExists(task.getErrorFilePath());
-            // 删除关联的错误明细和任务记录，防止表无限增长
             fileTaskErrorService.remove(new QueryWrapper<FileTaskError>().eq("task_id", task.getId()));
             removeById(task.getId());
         }
@@ -346,16 +330,15 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
         if (path == null || "".equals(path)) {
             return;
         }
-        if (ossService != null && ossService.isEnabled()) {
-            String key = extractOssKey(path);
-            if (ossService.exists(key)) {
-                ossService.delete(key);
+        if (isLocalPath(path)) {
+            File file = new File(path);
+            if (file.exists() && file.isFile()) {
+                file.delete();
             }
             return;
         }
-        File file = new File(path);
-        if (file.exists() && file.isFile()) {
-            file.delete();
+        if (storageService.exists(path)) {
+            storageService.delete(path);
         }
     }
 
@@ -372,5 +355,27 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
 
     private Integer getCurrentOperatorId() {
         return securityUtil.getCurrentOperatorId();
+    }
+
+    private boolean isLocalPath(String path) {
+        return path.contains(File.separator) || path.startsWith("/");
+    }
+
+    private String resolveDownloadKey(FileTask fileTask, String fileType) {
+        if (TaskFileTypeEnum.SOURCE.getValue().equalsIgnoreCase(fileType)) {
+            return fileTask.getSourceFilePath();
+        }
+        if (TaskFileTypeEnum.ERROR.getValue().equalsIgnoreCase(fileType)) {
+            return fileTask.getErrorFilePath();
+        }
+        return fileTask.getResultFilePath();
+    }
+
+    private String resolveDownloadName(FileTask fileTask, String fileType) {
+        if (TaskFileTypeEnum.ERROR.getValue().equalsIgnoreCase(fileType)) {
+            return "import-errors.xlsx";
+        }
+        String name = fileTask.getFileName();
+        return name != null && !"".equals(name) ? name : "download";
     }
 }

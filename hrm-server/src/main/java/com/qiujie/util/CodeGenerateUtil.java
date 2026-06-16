@@ -1,3 +1,6 @@
+/*
+ * TODO: MyBatis-Plus Generator 3.5.10 API 已变更，fileOverride()/OutputFile.mapperXml 等方法不存在。
+ * 待适配新 API 后恢复使用。
 package com.qiujie.util;
 
 import com.baomidou.mybatisplus.annotation.IdType;
@@ -78,3 +81,4 @@ public class CodeGenerateUtil {
         return value;
     }
 }
+*/

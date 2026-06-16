@@ -17,8 +17,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.annotation.Resource;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
@@ -100,7 +100,7 @@ public class DeptService extends ServiceImpl<DeptMapper, Dept> {
         }
         QueryWrapper<Dept> queryWrapper = new QueryWrapper();
         queryWrapper.eq("id", dept.getId());
-        if (saveOrUpdate(dept, queryWrapper)) {
+        if (update(dept, queryWrapper) || save(dept)) {
             return Response.success();
         }
         return Response.error();

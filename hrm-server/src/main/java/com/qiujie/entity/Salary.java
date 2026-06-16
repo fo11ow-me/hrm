@@ -1,15 +1,20 @@
 package com.qiujie.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import io.swagger.v3.oas.annotations.media.Schema;
 import com.fasterxml.jackson.annotation.JsonFormat;
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Setter;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.io.Serializable;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.sql.Timestamp;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * <p>
@@ -22,7 +27,7 @@ import java.sql.Timestamp;
 @Getter
 @Setter
 @TableName("sal_salary")
-@ApiModel(value = "Salary对象", description = "")
+@Schema(description = "Salary对象 - ")
 public class Salary implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -30,73 +35,73 @@ public class Salary implements Serializable {
     @TableId(value = "id", type = IdType.AUTO)
     private Integer id;
 
-    @ApiModelProperty("员工id")
+    @Schema(description = "员工id")
     @TableField("staff_id")
     private Integer staffId;
 
-    @ApiModelProperty("基础工资")
+    @Schema(description = "基础工资")
     @TableField("base_salary")
     private BigDecimal baseSalary;
 
-    @ApiModelProperty("平均日薪")
+    @Schema(description = "平均日薪")
     @TableField("day_salary")
     private BigDecimal daySalary;
 
-    @ApiModelProperty("平均时薪资")
+    @Schema(description = "平均时薪资")
     @TableField("hour_salary")
     private BigDecimal hourSalary;
 
-    @ApiModelProperty("加班费")
+    @Schema(description = "加班费")
     @TableField("overtime_salary")
     private BigDecimal overtimeSalary;
 
-    @ApiModelProperty("生活补贴")
+    @Schema(description = "生活补贴")
     @TableField("subsidy")
     private BigDecimal subsidy;
 
-    @ApiModelProperty("奖金")
+    @Schema(description = "奖金")
     @TableField("bonus")
     private BigDecimal bonus;
 
-    @ApiModelProperty("月份")
+    @Schema(description = "月份")
     @TableField("month")
     private String month;
 
-    @ApiModelProperty("早退扣款")
+    @Schema(description = "早退扣款")
     @TableField("late_deduct")
     private BigDecimal lateDeduct;
 
-    @ApiModelProperty("休假扣款")
+    @Schema(description = "休假扣款")
     @TableField("leave_deduct")
     private BigDecimal leaveDeduct;
 
-    @ApiModelProperty("早退扣款")
+    @Schema(description = "早退扣款")
     @TableField("leave_early_deduct")
     private BigDecimal leaveEarlyDeduct;
 
-    @ApiModelProperty("旷工扣款")
+    @Schema(description = "旷工扣款")
     @TableField("absenteeism_deduct")
     private BigDecimal absenteeismDeduct;
 
-    @ApiModelProperty("总工资")
+    @Schema(description = "总工资")
     @TableField("total_salary")
         private BigDecimal totalSalary;
 
-    @ApiModelProperty("备注")
+    @Schema(description = "备注")
     @TableField("remark")
     private String remark;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
-    @ApiModelProperty("创建时间")
+    @Schema(description = "创建时间")
     @TableField("create_time")
     private Timestamp createTime;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
-    @ApiModelProperty("更新时间")
+    @Schema(description = "更新时间")
     @TableField("update_time")
     private Timestamp updateTime;
 
-    @ApiModelProperty("逻辑删除，0未删除，1删除")
+    @Schema(description = "逻辑删除，0未删除，1删除")
     @TableField("is_deleted")
     @TableLogic
     private Integer deleteFlag;

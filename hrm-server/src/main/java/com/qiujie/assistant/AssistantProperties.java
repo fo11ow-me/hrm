@@ -7,7 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 
 @Data
 @Component
@@ -42,33 +42,6 @@ public class AssistantProperties {
             log.info("Assistant service is disabled");
             return;
         }
-
-        Provider provider = getProvider();
-
-        // 强制要求配置 API Key
-        if (!StringUtils.hasText(provider.getApiKey())) {
-            throw new IllegalStateException("assistant.provider.api-key must be configured when assistant is enabled");
-        }
-
-        // 检测硬编码的 API Key
-        String apiKey = provider.getApiKey();
-        if (apiKey.startsWith("sk-") && !apiKey.contains("${") && !apiKey.contains("{{")) {
-            log.warn("⚠️  SECURITY WARNING: API Key appears to be hardcoded in configuration file!");
-            log.warn("    Please use environment variable instead:");
-            log.warn("    assistant.provider.api-key=${ASSISTANT_API_KEY}");
-            log.warn("    Never commit API keys to version control!");
-        }
-
-        // 验证其他配置
-        if (!StringUtils.hasText(provider.getBaseUrl())) {
-            throw new IllegalStateException("assistant.provider.base-url must be configured");
-        }
-
-        if (!StringUtils.hasText(provider.getModel())) {
-            throw new IllegalStateException("assistant.provider.model must be configured");
-        }
-
-        log.info("Assistant service configured successfully: baseUrl={}, model={}, quota={}/day",
-                 provider.getBaseUrl(), provider.getModel(), dailyQuota);
+        log.info("Assistant service enabled (using Spring AI Ollama), quota={}/day", dailyQuota);
     }
 }

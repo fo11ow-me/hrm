@@ -9,13 +9,13 @@ import com.qiujie.mapper.MenuMapper;
 import com.qiujie.mapper.StaffMapper;
 import com.qiujie.service.LoginService;
 import com.qiujie.util.JwtUtil;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.Cookie;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -49,7 +49,7 @@ public class LoginController {
         this.loginService.getValidateCode(response);
     }
 
-    @ApiOperation("刷新 Access Token")
+    @Operation(summary = "刷新 Access Token")
     @PostMapping("/refresh")
     public ResponseDTO refresh(HttpServletRequest request, HttpServletResponse response) {
         String refreshToken = null;
@@ -102,7 +102,7 @@ public class LoginController {
         }
     }
 
-    @ApiOperation("登出")
+    @Operation(summary = "登出")
     @PostMapping("/logout")
     public ResponseDTO logout(HttpServletResponse response) {
         // 清除 httpOnly Cookie
