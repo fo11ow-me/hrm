@@ -12,15 +12,14 @@ import com.qiujie.util.SecurityUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.File;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -50,15 +49,15 @@ class FileTaskServiceUnitTest {
     @Mock
     private SecurityUtil securityUtil;
 
+    @Mock
+    private com.qiujie.storage.MinioStorageService storageService;
+
     @InjectMocks
     private FileTaskService fileTaskService;
 
-    @TempDir
-    Path tempDir;
-
     @BeforeEach
     void setUp() {
-        ReflectionTestUtils.setField(fileTaskService, "filePath", tempDir.toString());
+        ReflectionTestUtils.setField(fileTaskService, "baseMapper", fileTaskMapper);
     }
 
     // ==================== createTask ====================
@@ -141,7 +140,7 @@ class FileTaskServiceUnitTest {
     void setTotalCount_ShouldUpdateTask() {
         fileTaskService.setTotalCount(1L, 500);
 
-        verify(fileTaskMapper).updateById(argThat(t -> t.getId().equals(1L) && t.getTotalCount() == 500));
+        verify(fileTaskMapper).updateById(Mockito.<FileTask>argThat(t -> t.getId().equals(1L) && t.getTotalCount() == 500));
     }
 
     // ==================== setResultFile ====================
@@ -150,7 +149,7 @@ class FileTaskServiceUnitTest {
     void setResultFile_ShouldUpdateTask() {
         fileTaskService.setResultFile(1L, "/tmp/result.xlsx");
 
-        verify(fileTaskMapper).updateById(argThat(t ->
+        verify(fileTaskMapper).updateById(Mockito.<FileTask>argThat(t ->
                 t.getId().equals(1L) && "/tmp/result.xlsx".equals(t.getResultFilePath())));
     }
 

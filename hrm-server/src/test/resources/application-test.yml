@@ -8,8 +8,8 @@ spring:
       username: ${TEST_DB_USERNAME}
       password: ${TEST_DB_PASSWORD}
       driver-class-name: com.mysql.cj.jdbc.Driver
-    activiti:
-      jdbc-url: ${TEST_DB_ACTIVITI_URL}
+    flowable:
+      jdbc-url: ${TEST_DB_FLOWABLE_URL}
       username: ${TEST_DB_USERNAME}
       password: ${TEST_DB_PASSWORD}
       driver-class-name: com.mysql.cj.jdbc.Driver

@@ -209,6 +209,7 @@ class FileTaskEngineUnitTest {
         File resultFile = new File(tempDir.toFile(), "task-result/test-uuid.xlsx");
         resultFile.getParentFile().mkdirs();
         when(fileTaskService.buildTaskFile("task-result", "test.xlsx")).thenReturn(resultFile);
+        when(fileTaskService.uploadToMinio(any(File.class), anyString())).thenReturn("task-result/test-uuid.xlsx");
 
         List<AttendanceImportRow> data = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
@@ -241,6 +242,7 @@ class FileTaskEngineUnitTest {
         File resultFile = new File(tempDir.toFile(), "task-result/test-multi.xlsx");
         resultFile.getParentFile().mkdirs();
         when(fileTaskService.buildTaskFile("task-result", "multi.xlsx")).thenReturn(resultFile);
+        when(fileTaskService.uploadToMinio(any(File.class), anyString())).thenReturn("task-result/test-multi.xlsx");
 
         List<AttendanceImportRow> page1Data = new ArrayList<>();
         for (int i = 0; i < 500; i++) page1Data.add(new AttendanceImportRow());
@@ -277,6 +279,7 @@ class FileTaskEngineUnitTest {
         File resultFile = new File(tempDir.toFile(), "task-result/test-empty.xlsx");
         resultFile.getParentFile().mkdirs();
         when(fileTaskService.buildTaskFile("task-result", "empty.xlsx")).thenReturn(resultFile);
+        when(fileTaskService.uploadToMinio(any(File.class), anyString())).thenReturn("task-result/test-empty.xlsx");
 
         IPage<AttendanceImportRow> page = new Page<>(1, 500, 0);
         page.setRecords(new ArrayList<>());
