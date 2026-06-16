@@ -82,7 +82,7 @@ export const getImportApi = () => {
 }
 
 export const getImportTaskApi = () => {
-  return process.env.VUE_APP_BASE_API + url + '/import/task'
+  return url + '/import/task'
 }
 
 export const createExportTask = (params) => {

@@ -11,19 +11,12 @@
     </el-dialog>
 
     <div class="toolbar">
-      <el-upload
+      <ChunkedImportBtn
         v-permission="['performance:attendance:import']"
-        :action="importApi"
-        :headers="headers"
-        accept=".xlsx"
-        :show-file-list="false"
-        :on-success="handleImportSuccess"
-        :on-error="handleImportError"
-        :multiple="false"
-        style="display:inline-block"
-      >
-        <el-button type="success" size="mini">导入</el-button>
-      </el-upload>
+        :import-api="importApi"
+        @success="handleImportSuccess"
+        @error="handleImportError"
+      />
       <el-button
         v-permission="['performance:attendance:export']"
         type="warning"
@@ -113,6 +106,7 @@
 </template>
 
 <script>
+import ChunkedImportBtn from '@/components/ChunkedImportBtn'
 import {
   queryAll,
   queryByStaffIdAndDate,
@@ -121,10 +115,10 @@ import {
   setAttendance,
   createExportTask
 } from '@/api/attendance'
-import { mapGetters } from 'vuex'
 import { queryAll as queryAllDept } from '@/api/dept'
 export default {
   name: 'Attendance',
+  components: { ChunkedImportBtn },
   data () {
     return {
       dialog: {
@@ -150,10 +144,6 @@ export default {
     }
   },
   computed: {
-    ...mapGetters(['token']),
-    headers () {
-      return this.token ? { Authorization: 'Bearer ' + this.token } : {}
-    },
     importApi () {
       return getImportTaskApi()
     }
@@ -258,22 +248,25 @@ export default {
         }
       })
     },
-    handleImportSuccess (response) {
-      if (response.code === 200) {
-        this.$message.success(response.message || '导入任务已创建')
-      } else {
-        this.$message.error(response.message || '导入失败')
-      }
+    handleImportSuccess () {
+      // 任务创建成功，等待 SSE 通知导入完成后再刷新
     },
     handleImportError () {
-      this.$message.error('导入请求失败')
+      // 组件内已显示错误提示
+    },
+    onTaskCompleted (task) {
+      if (task.module === 'ATTENDANCE') {
+        this.search()
+      }
     }
   },
   created () {
     this.loadBaseData()
     this.search()
+    this.$root.$on('task-completed', this.onTaskCompleted)
   },
   beforeDestroy () {
+    this.$root.$off('task-completed', this.onTaskCompleted)
   }
 }
 </script>

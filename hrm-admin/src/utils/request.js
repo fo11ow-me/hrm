@@ -28,7 +28,10 @@ function toLogin () {
  * request 拦截器
  */
 instance.interceptors.request.use(config => {
-  config.headers['Content-Type'] = 'application/json;charset=utf-8'
+    // FormData 由浏览器自动设置 multipart/form-data + boundary，不要覆盖
+    if (!(config.data instanceof FormData)) {
+      config.headers['Content-Type'] = 'application/json;charset=utf-8'
+    }
   return config
 }, error => {
   return Promise.reject(error)
@@ -79,7 +82,7 @@ instance.interceptors.response.use(response => {
     }
   }
   // 业务错误
-  if (res.code === 400 || res.code === 500) {
+  if (res.code === 400 || res.code === 500 || res.code === 1300) {
     ElementUI.Message({
       message: res.message,
       type: 'error',

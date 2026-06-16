@@ -73,5 +73,9 @@ docs/
 /nbdist/
 /.nb-gradle/
 
+# 临时文件和重构备份
+tmp/
+*.bak
+
 # 本地开发运行时目录
 hrm-server/hrm-files/

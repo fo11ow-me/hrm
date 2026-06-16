@@ -91,7 +91,7 @@ export const getImportApi = () => {
 
 // 异步导入（大文件）
 export const getAsyncImportApi = () => {
-  return process.env.VUE_APP_BASE_API + url + '/import/task'
+  return url + '/import/task'
 }
 
 // 异步导出（大文件）

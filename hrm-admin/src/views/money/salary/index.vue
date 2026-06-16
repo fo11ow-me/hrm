@@ -82,13 +82,14 @@
     </el-dialog>
     <!--操作-->
     <div style="margin-bottom: 10px">
-      <el-upload v-permission="['money:salary:import']" :action="importApi" :headers="headers" accept="xlsx" :show-file-list="false"
-                 :on-success="handleAsyncImportSuccess" :multiple="false"
-                 style="display:inline-block">
-        <el-button type="success" size="mini"
-        >导入 <i class="el-icon-bottom"></i>
-        </el-button>
-      </el-upload>
+      <ChunkedImportBtn
+        v-permission="['money:salary:import']"
+        :import-api="importApi"
+        label="导入"
+        accept=".xlsx"
+        @success="handleAsyncImportSuccess"
+        @error="handleImportError"
+      />
       <el-button v-permission="['money:salary:export']" type="warning" size="mini" @click="handleExport" style="margin-left: 10px"
       >导出 <i class="el-icon-top"></i>
       </el-button>
@@ -189,13 +190,14 @@
   </div>
 </template>
 <script>
+import ChunkedImportBtn from '@/components/ChunkedImportBtn'
 import { getImportTaskApi, list, setSalary, createExportTask } from '@/api/salary'
 import { queryByStaffId } from '@/api/insurance'
-import { mapGetters } from 'vuex'
 import { queryAll } from '@/api/dept'
 
 export default {
   name: 'Salary',
+  components: { ChunkedImportBtn },
   data () {
     const checkSalary = (rule, value, callback) => {
       if (this.dialogForm.formData.totalSalary < 0) {
@@ -232,11 +234,6 @@ export default {
     }
   },
   computed: {
-    ...mapGetters(['token']),
-    headers () {
-      return this.token ? { Authorization: 'Bearer ' + this.token } : {}
-    },
-    // 获取导入数据的接口
     importApi () {
       return getImportTaskApi()
     }
@@ -383,17 +380,24 @@ export default {
         }
       })
     },
-    handleAsyncImportSuccess (response) {
-      if (response.code === 200) {
-        this.$message.success('导入任务已创建，完成后可在头像通知中查看')
+    handleAsyncImportSuccess () {
+      // 任务创建成功，等待 SSE 通知导入完成后再刷新
+    },
+    handleImportError () {
+      // 组件内已显示错误提示
+    },
+    onTaskCompleted (task) {
+      if (task.module === 'SALARY') {
         this.search()
-      } else {
-        this.$message.error('导入任务创建失败！')
       }
     }
   },
   created () {
     this.loading()
+    this.$root.$on('task-completed', this.onTaskCompleted)
+  },
+  beforeDestroy () {
+    this.$root.$off('task-completed', this.onTaskCompleted)
   }
 }
 </script>

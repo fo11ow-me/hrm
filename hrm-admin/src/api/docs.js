@@ -78,7 +78,7 @@ export const getImportApi = () => {
   return process.env.VUE_APP_BASE_API + url + '/import'
 }
 
-// 文件上传
+// 头像上传（小文件直传）
 export const getUploadApi = (id) => {
   return process.env.VUE_APP_BASE_API + url + '/upload/' + id
 }

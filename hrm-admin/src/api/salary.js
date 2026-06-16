@@ -58,7 +58,7 @@ export const exp = (month, filename) => {
 
 // 数据导入（异步任务）
 export const getImportTaskApi = () => {
-  return process.env.VUE_APP_BASE_API + url + '/import/task'
+  return url + '/import/task'
 }
 
 // 数据导入（同步，保留兼容）

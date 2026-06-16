@@ -25,7 +25,7 @@
               <div class="notif-body">{{ item.body }}</div>
               <div class="notif-time">{{ item.time }}</div>
               <div v-if="item.taskId" class="notif-task">
-                <span v-if="item.status === 'SUCCESS'" style="color:#67c23a">完成</span>
+                <span v-if="item.status === 'SUCCESS' || item.status === 'PARTIAL_SUCCESS'" style="color:#67c23a">完成</span>
                 <span v-else-if="item.status === 'FAILED'" style="color:#f56c6c">失败</span>
                 <span v-else style="color:#409eff">{{ item.processed }}/{{ item.total }}</span>
               </div>
@@ -486,11 +486,16 @@ export default {
             total: task.totalCount
           }
           if (existing) {
-            Object.assign(existing, item)
+            const idx = this.notifications.indexOf(existing)
+            if (idx >= 0) this.$set(this.notifications, idx, item)
           } else {
             this.notifications.unshift(item)
             if (this.notifications.length > 20) this.notifications.pop()
             this.unreadCount++
+          }
+          // 任务完成时广播事件，让各模块页面自动刷新数据
+          if (task.status === 'SUCCESS' || task.status === 'PARTIAL_SUCCESS') {
+            this.$root.$emit('task-completed', task)
           }
         } catch (e) { /* ignore */ }
       })

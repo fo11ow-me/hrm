@@ -55,13 +55,14 @@
 
     <!--操作-->
     <div style="margin-bottom: 10px">
-      <el-upload v-permission="['performance:overtime:import']" :action="asyncImportApi" :headers="headers" accept="xlsx" :show-file-list="false"
-                 :on-success="handleAsyncImportSuccess" :multiple="false"
-                 style="display:inline-block">
-        <el-button type="success" size="mini"
-        >导入 <i class="el-icon-bottom"></i>
-        </el-button>
-      </el-upload>
+      <ChunkedImportBtn
+        v-permission="['performance:overtime:import']"
+        :import-api="asyncImportApi"
+        label="导入"
+        accept=".xlsx"
+        @success="handleAsyncImportSuccess"
+        @error="handleImportError"
+      />
       <el-button v-permission="['performance:overtime:export']" type="warning" size="mini" @click="handleExportAsync" style="margin-left:10px"
       >导出 <i class="el-icon-top"></i>
       </el-button>
@@ -148,13 +149,14 @@
 </template>
 <script>
 // eslint-disable-next-line no-unused-vars
+import ChunkedImportBtn from '@/components/ChunkedImportBtn'
 import { queryByStaffIdAndDate, getAsyncImportApi, list, setOvertime, createExportTask } from '@/api/staffOvertime'
 import { queryByDeptIdAndTypeNum } from '@/api/overtime'
-import { mapGetters } from 'vuex'
 import { queryAll } from '@/api/dept'
 
 export default {
   name: 'Overtime',
+  components: { ChunkedImportBtn },
   data () {
     const checkTotalOvertime = (rule, value, callback) => {
       if (value <= 0) {
@@ -191,12 +193,6 @@ export default {
       },
       dayNum: 0,
       month: ''
-    }
-  },
-  computed: {
-    ...mapGetters(['token']),
-    headers () {
-      return this.token ? { Authorization: 'Bearer ' + this.token } : {}
     }
   },
   watch: {
@@ -310,20 +306,22 @@ export default {
         }
       })
     },
-    handleAsyncImportSuccess (response) {
-      if (response.code === 200) {
-        this.$message.success('已提交异步导入，请查看下方任务进度')
-        this.refreshTaskList()
-      } else {
-        this.$message.error(response.message || '提交失败')
+    handleAsyncImportSuccess () {
+      // 任务创建成功，等待 SSE 通知导入完成后再刷新
+    },
+    handleImportError () {
+      // 组件内已显示错误提示
+    },
+    onTaskCompleted (task) {
+      if (task.module === 'OVERTIME') {
+        this.search()
       }
     },
     handleExportAsync () {
       const filename = this.month.substring(0, 4) + '年' + this.month.substring(4) + '月加班报表'
       createExportTask(this.month, filename).then(response => {
         if (response.code === 200) {
-          this.$message.success('已提交异步导出，请查看下方任务进度')
-          this.refreshTaskList()
+          this.$message.success('已提交异步导出，可在头像通知栏查看进度')
         } else {
           this.$message.error(response.message || '提交失败')
         }
@@ -332,10 +330,10 @@ export default {
   },
   created () {
     this.loading()
-    this.connectSse()
+    this.$root.$on('task-completed', this.onTaskCompleted)
   },
   beforeDestroy () {
-    this.disconnectSse()
+    this.$root.$off('task-completed', this.onTaskCompleted)
   }
 }
 </script>
