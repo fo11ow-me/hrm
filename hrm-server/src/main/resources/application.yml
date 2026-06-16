@@ -55,6 +55,17 @@ spring:
         options:
           model: ${OLLAMA_EMBEDDING_MODEL:nomic-embed-text}
 
+flowable:
+  database-schema-update: true
+  dmn:
+    enabled: false
+  form:
+    enabled: false
+  app:
+    enabled: false
+  content:
+    enabled: false
+
 mybatis-plus:
   configuration:
     log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.nologging.NoLoggingImpl}
