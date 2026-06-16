@@ -54,10 +54,10 @@ https://qiujie.net.cn
 
 ```bash
 # 启动所有容器
-docker start mysql8 hrm-redis hrm-minio hrm-postgres
+docker start hrm-mysql hrm-redis hrm-minio hrm-postgres
 
 # 容器端口
-# mysql8:        3306 (hrm + hrm_flowable 数据库)
+# hrm-mysql:     3306 (hrm + hrm_flowable 数据库)
 # hrm-redis:     6381 (密码: 123456)
 # hrm-minio:     9000 (minioadmin / minioadmin)
 # hrm-postgres:  5432 (hrm_kb 数据库, postgres / postgres)
@@ -81,7 +81,14 @@ npm run serve    # 端口 8080，/api 代理到 localhost:8889
 
 ### 知识库与 AI 助手
 
-知识库和 AI 助手模块默认启用。需确保：
+知识库和 AI 助手模块默认关闭，通过环境变量启用：
+
+```bash
+KNOWLEDGE_ENABLED=true              # 开启知识库
+ASSISTANT_ENABLED=true              # 开启 AI 助手
+```
+
+启用前需确保：
 - PostgreSQL + pgvector 扩展已安装
 - Ollama 已安装 `nomic-embed-text` 和对话模型
 - `sql/knowledge_base.sql` 中 MySQL 部分已执行
@@ -93,4 +100,4 @@ npm run serve    # 端口 8080，/api 代理到 localhost:8889
 ## 项目文档
 
 - 详细变更日志见 `tmp/其它.md`
-- 架构参考项目：`D:\project\vscode\Argus`（企业级 RAG 知识库平台）
+<!-- 架构参照 Argus 项目（企业级 RAG 知识库平台），项目路径为私有信息不在此公开 -->
