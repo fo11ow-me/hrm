@@ -141,7 +141,7 @@ public class StaffLeaveController {
 
     @Operation(summary = "完成任务")
     @PostMapping("/complete")
-    @PreAuthorize("hasAnyAuthority('performance:leave:audit')")
+    @PreAuthorize("hasAnyAuthority('performance:leave:approve','performance:leave:reject')")
     public ResponseDTO complete(@RequestBody StaffLeave staffLeave) {
         return this.staffLeaveService.complete(staffLeave);
     }
