@@ -20,6 +20,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import javax.sql.DataSource;
 import java.io.IOException;
 import java.util.*;
+import org.springframework.security.core.Authentication;
 import java.util.stream.Collectors;
 
 /**
@@ -101,12 +102,14 @@ public class QaService {
     }
 
     /**
-     * SSE 流式问答。
+     * SSE 流式问答。捕获当前线程安全上下文传入后台线程。
      */
     public SseEmitter streamAsk(QaRequest request) {
         SseEmitter emitter = new SseEmitter(300000L);
+        Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
 
         new Thread(() -> {
+            org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
             try {
                 ResponseDTO result = ask(request);
                 QaResponse qa = (QaResponse) result.getData();
@@ -133,6 +136,8 @@ public class QaService {
             } catch (Exception e) {
                 log.error("SSE stream error", e);
                 emitter.completeWithError(e);
+            } finally {
+                org.springframework.security.core.context.SecurityContextHolder.clearContext();
             }
         }).start();
 
