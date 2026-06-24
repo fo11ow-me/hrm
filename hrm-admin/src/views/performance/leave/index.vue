@@ -186,7 +186,7 @@ export default {
           this.$message.success('拾取任务成功！')
           this.search()
         } else {
-          this.$message.error('拾取任务失败！')
+          this.$message.error('拾取任务失败：' + (response.message || '未知错误'))
         }
       })
     },
@@ -197,7 +197,7 @@ export default {
           this.$message.success('归还任务成功！')
           this.search()
         } else {
-          this.$message.error('归还任务失败！')
+          this.$message.error('归还任务失败：' + (response.message || '未知错误'))
         }
       })
     },
@@ -209,7 +209,7 @@ export default {
           this.search()
           this.$message.success('通过！')
         } else {
-          this.$message.error('审批失败！')
+          this.$message.error('审批失败：' + (response.message || '未知错误'))
         }
       })
     },
@@ -226,7 +226,7 @@ export default {
           this.rejectForm.isShow = false
           this.$message.success('驳回！')
         } else {
-          this.$message.error('审批失败！')
+          this.$message.error('审批失败：' + (response.message || '未知错误'))
         }
       })
     },

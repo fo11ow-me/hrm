@@ -403,7 +403,8 @@ public class StaffLeaveService extends ServiceImpl<StaffLeaveMapper, StaffLeave>
                 .taskAssignee(code).singleResult();
 
         if (task == null) {
-            return Response.error("任务不存在或未分配给你");
+            log.warn("Leave audit task not found: leaveId={}, assignee={}", staffLeave.getId(), code);
+            return Response.error("任务不存在或未分配给你（可能已被归还或他人已处理）");
         }
 
         Map<String, Object> map = new HashMap<>();

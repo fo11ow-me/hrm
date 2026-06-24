@@ -23,7 +23,7 @@
     <sequenceFlow id="sid-48777b7d-bf8a-436e-a891-046fce766ace" sourceRef="hr_audit" targetRef="leave_apply">
       <conditionExpression>${hrAuditStatus == 2}</conditionExpression>
     </sequenceFlow>
-    <sequenceFlow id="sid-921e87e3-6637-4fcd-952a-00d4feb9cb80" sourceRef="manager_audit" targetRef="leave_apply">
+    <sequenceFlow id="sid-921e87e3-6637-4fcd-952a-00d4feb9cb80" sourceRef="manager_audit" targetRef="hr_audit">
       <conditionExpression>${managerAuditStatus == 2}</conditionExpression>
     </sequenceFlow>
   </process>
