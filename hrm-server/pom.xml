@@ -80,10 +80,10 @@
         </dependency>
 
         <!-- Spring AI (OpenAI 兼容模式) -->
-        <!-- Spring AI Ollama -->
+        <!-- Spring AI OpenAI (指向百炼 DashScope 兼容端点) -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-ollama-spring-boot-starter</artifactId>
+            <artifactId>spring-ai-openai-spring-boot-starter</artifactId>
         </dependency>
 
         <!-- Spring AI pgvector -->

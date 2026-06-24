@@ -30,13 +30,21 @@ public class OllamaEmbeddingClient {
     private final ObjectMapper mapper;
 
     public OllamaEmbeddingClient(
-            @Value("${spring.ai.ollama.base-url:http://localhost:11434}") String baseUrl,
-            @Value("${spring.ai.ollama.embedding.options.model:nomic-embed-text}") String model) {
+            @Value("${spring.ai.openai.base-url:https://dashscope.aliyuncs.com/compatible-mode}") String baseUrl,
+            @Value("${spring.ai.openai.api-key:}") String apiKey,
+            @Value("${spring.ai.openai.embedding.options.model:text-embedding-v3}") String model) {
         this.restTemplate = new RestTemplate();
         this.apiUrl = baseUrl + "/v1/embeddings";
         this.model = model;
         this.mapper = new ObjectMapper();
-        log.info("Ollama embedding client: url={}, model={}", apiUrl, model);
+        // 百炼 API Key 通过 Authorization header 传递
+        if (apiKey != null && !apiKey.isBlank()) {
+            this.restTemplate.getInterceptors().add((request, body, execution) -> {
+                request.getHeaders().setBearerAuth(apiKey);
+                return execution.execute(request, body);
+            });
+        }
+        log.info("Embedding client: url={}, model={}", apiUrl, model);
     }
 
     public List<float[]> embed(List<String> texts) {

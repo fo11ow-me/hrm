@@ -42,6 +42,6 @@ public class AssistantProperties {
             log.info("Assistant service is disabled");
             return;
         }
-        log.info("Assistant service enabled (using Spring AI Ollama), quota={}/day", dailyQuota);
+        log.info("Assistant service enabled (using Spring AI OpenAPI/DashScope), quota={}/day", dailyQuota);
     }
 }

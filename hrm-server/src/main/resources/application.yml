@@ -46,14 +46,15 @@ spring:
     allow-bean-definition-overriding: true
 
   ai:
-    ollama:
-      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+    openai:
+      api-key: ${DASHSCOPE_API_KEY:}
+      base-url: ${DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
       chat:
         options:
-          model: ${OLLAMA_CHAT_MODEL:minimax-m3:cloud}
+          model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
       embedding:
         options:
-          model: ${OLLAMA_EMBEDDING_MODEL:nomic-embed-text}
+          model: ${DASHSCOPE_EMBEDDING_MODEL:text-embedding-v3}
 
 flowable:
   database-schema-update: true
