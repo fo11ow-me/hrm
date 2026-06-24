@@ -120,7 +120,6 @@ public class StaffLeaveController {
 
     @Operation(summary = "申请请假")
     @PostMapping("/apply")
-    @PreAuthorize("hasAnyAuthority('performance:leave:apply')")
     public ResponseDTO apply(@RequestBody StaffLeave staffLeave) {
         return this.staffLeaveService.apply(staffLeave);
     }
@@ -149,7 +148,6 @@ public class StaffLeaveController {
 
     @Operation(summary = "撤销请假")
     @PostMapping("/cancel")
-    @PreAuthorize("hasAnyAuthority('performance:leave:cancel')")
     public ResponseDTO cancel(@RequestBody StaffLeave staffLeave){
         return this.staffLeaveService.cancel(staffLeave);
     }
