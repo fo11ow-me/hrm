@@ -50,6 +50,18 @@ public class AgentController {
     }
 
     /**
+     * 获取单个会话详情。
+     */
+    @GetMapping("/conversations/{id}")
+    public ResponseDTO getSession(@PathVariable Long id) {
+        AgentSession session = agentService.getSession(id);
+        if (session == null) {
+            return com.qiujie.dto.Response.error("会话不存在");
+        }
+        return Response.success(session);
+    }
+
+    /**
      * 获取会话消息。
      */
     @GetMapping("/conversations/{id}/messages")
