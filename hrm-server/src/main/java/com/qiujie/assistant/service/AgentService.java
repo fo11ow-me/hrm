@@ -13,11 +13,15 @@ import com.qiujie.util.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -84,8 +88,20 @@ public class AgentService {
 
         String answer;
         try {
+            // 将截断后的历史消息转换为 Spring AI Message 列表
+            List<Message> historyMessages = new ArrayList<>();
+            for (AgentMessage m : recentMessages) {
+                if (m.getContent() == null || m.getContent().isBlank()) continue;
+                if ("USER".equals(m.getRole())) {
+                    historyMessages.add(new UserMessage(m.getContent()));
+                } else if ("ASSISTANT".equals(m.getRole())) {
+                    historyMessages.add(new AssistantMessage(m.getContent()));
+                }
+            }
+
             answer = chatClient.prompt()
                     .system(s -> s.text(memoryContext))
+                    .messages(historyMessages)
                     .user(request.getMessage())
                     .call()
                     .content();
