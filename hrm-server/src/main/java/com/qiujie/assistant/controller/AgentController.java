@@ -25,14 +25,6 @@ public class AgentController {
     private AgentService agentService;
 
     /**
-     * 同步对话。
-     */
-    @PostMapping("/chat")
-    public ResponseDTO chat(@RequestBody AgentChatRequest request) {
-        return agentService.chatSync(request);
-    }
-
-    /**
      * SSE 流式对话。
      */
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

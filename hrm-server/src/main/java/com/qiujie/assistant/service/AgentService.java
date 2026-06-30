@@ -1,98 +1,60 @@
 package com.qiujie.assistant.service;
 
-import com.qiujie.assistant.AssistantTools;
 import com.qiujie.assistant.dto.AgentChatRequest;
 import com.qiujie.assistant.entity.AgentMessage;
 import com.qiujie.assistant.entity.AgentSession;
+import com.qiujie.assistant.entity.AssistantSessionContext;
 import com.qiujie.assistant.mapper.AgentMessageMapper;
 import com.qiujie.assistant.mapper.AgentSessionMapper;
-import com.qiujie.dto.Response;
-import com.qiujie.dto.ResponseDTO;
+import com.qiujie.assistant.mapper.AssistantSessionContextMapper;
+import com.qiujie.assistant.memory.AssistantMemoryProperties;
+import com.qiujie.assistant.memory.AssistantSessionSummaryService;
 import com.qiujie.util.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.IOException;
 import java.time.LocalDateTime;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
-/**
- * AI Agent 引擎：ReAct 循环（思考 → 工具调用 → 生成回复）。
- * 支持 CHAT / KB_SEARCH 双模式，同一会话内动态切换。
- */
 @Service
 public class AgentService {
 
     private static final Logger log = LoggerFactory.getLogger(AgentService.class);
 
-    @Autowired
-    private AgentSessionMapper sessionMapper;
-
-    @Autowired
-    private AgentMessageMapper messageMapper;
-
-    @Autowired
-    private AgentMemoryService memoryService;
-
-    @Autowired
-    private SecurityUtil securityUtil;
-
-    @Autowired
-    private AssistantTools assistantTools;
-
+    private final AgentSessionMapper sessionMapper;
+    private final AgentMessageMapper messageMapper;
+    private final AssistantSessionContextMapper contextMapper;
+    private final AssistantMemoryService memoryService;
+    private final AssistantSessionSummaryService summaryService;
+    private final SecurityUtil securityUtil;
+    private final AssistantMemoryProperties memoryProps;
     private final ChatClient chatClient;
 
-    public AgentService(ChatClient.Builder chatClientBuilder) {
+    public AgentService(AgentSessionMapper sessionMapper,
+            AgentMessageMapper messageMapper,
+            AssistantSessionContextMapper contextMapper,
+            AssistantMemoryService memoryService,
+            AssistantSessionSummaryService summaryService,
+            SecurityUtil securityUtil,
+            AssistantMemoryProperties memoryProps,
+            ChatClient.Builder chatClientBuilder) {
+        this.sessionMapper = sessionMapper;
+        this.messageMapper = messageMapper;
+        this.contextMapper = contextMapper;
+        this.memoryService = memoryService;
+        this.summaryService = summaryService;
+        this.securityUtil = securityUtil;
+        this.memoryProps = memoryProps;
         this.chatClient = chatClientBuilder.build();
     }
 
-    /**
-     * 同步对话。
-     */
     @Transactional
-    public ResponseDTO chatSync(AgentChatRequest request) {
-        Integer staffId = securityUtil.getCurrentOperatorId();
-        AgentSession session = getOrCreateSession(request, staffId);
-
-        // 保存用户消息
-        AgentMessage userMsg = new AgentMessage()
-                .setSessionId(session.getId()).setRole("user")
-                .setContent(request.getMessage()).setTokenCount(estimateTokens(request.getMessage()))
-                .setCreatedAt(LocalDateTime.now());
-        messageMapper.insert(userMsg);
-
-        String answer = chatClient.prompt()
-                .user(request.getMessage())
-                .tools(assistantTools)
-                .call()
-                .content();
-
-        // 保存应答
-        AgentMessage assistantMsg = new AgentMessage()
-                .setSessionId(session.getId()).setRole("assistant")
-                .setContent(answer).setTokenCount(estimateTokens(answer))
-                .setCreatedAt(LocalDateTime.now());
-        messageMapper.insert(assistantMsg);
-        memoryService.afterMessage(session);
-
-        Map<String, Object> data = new HashMap<>();
-        data.put("conversationId", session.getId());
-        data.put("answer", answer);
-        data.put("suggestions", List.of("查询我的考勤", "请假流程是什么", "本月薪资明细"));
-        return Response.success(data);
-    }
-
-    /**
-     * SSE 流式对话 — 后台线程调 ChatClient.call()（含 Tool），再逐字推流。
-     * 注：Spring AI 1.0.0-M6 MethodToolCallback 不支持空 toolInput，.stream() 模式
-     * 下 qwen-plus 无参函数调用会抛 IllegalArgumentException，故暂用 call() 替代 stream()。
-     */
     public SseEmitter chat(AgentChatRequest request) {
         SseEmitter emitter = new SseEmitter(300000L);
         Integer staffId = securityUtil.getCurrentOperatorId();
@@ -101,20 +63,34 @@ public class AgentService {
         AgentSession session = getOrCreateSession(request, staffId);
 
         AgentMessage userMsg = new AgentMessage()
-                .setSessionId(session.getId()).setRole("user")
-                .setContent(request.getMessage()).setTokenCount(estimateTokens(request.getMessage()))
+                .setSessionId(session.getId()).setRole("USER")
+                .setContent(request.getMessage())
                 .setCreatedAt(LocalDateTime.now());
         messageMapper.insert(userMsg);
+
+        // 组装 L1/L2 记忆上下文注入 system prompt
+        String memoryContext = memoryService.buildContext(session);
+
+        // L3: 加载最近消息，token 超阈值则截断
+        List<AgentMessage> recentMessages = loadRecentMessages(session.getId());
+        int estimatedTokens = memoryService.estimateTokens(recentMessages);
+        if (estimatedTokens > memoryProps.getMaxTokens()) {
+            int keep = memoryProps.getKeepRecent();
+            recentMessages = recentMessages.subList(
+                    Math.max(0, recentMessages.size() - keep), recentMessages.size());
+            log.warn("Session {} L3 truncation: {} > {} tokens, kept {} messages",
+                    session.getId(), estimatedTokens, memoryProps.getMaxTokens(), keep);
+        }
 
         String answer;
         try {
             answer = chatClient.prompt()
+                    .system(s -> s.text(memoryContext))
                     .user(request.getMessage())
-                    .tools(assistantTools)
                     .call()
                     .content();
         } catch (Exception e) {
-            log.error("ChatClient call failed", e);
+            log.error("LLM call failed", e);
             answer = "抱歉，AI 服务暂时不可用，请稍后重试。";
         }
 
@@ -124,6 +100,7 @@ public class AgentService {
 
         final String finalAnswer = answer;
         final Long sessionId = session.getId();
+        final String toolMode = session.getMode();
 
         new Thread(() -> {
             org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
@@ -133,12 +110,23 @@ public class AgentService {
                     emitter.send(SseEmitter.event().name("token").data(ch));
                     if (i % 5 == 0) Thread.sleep(5);
                 }
+
                 AgentMessage assistantMsg = new AgentMessage()
-                        .setSessionId(sessionId).setRole("assistant")
-                        .setContent(finalAnswer).setTokenCount(estimateTokens(finalAnswer))
+                        .setSessionId(sessionId).setRole("ASSISTANT")
+                        .setContent(finalAnswer)
                         .setCreatedAt(LocalDateTime.now());
                 messageMapper.insert(assistantMsg);
-                memoryService.afterMessage(sessionMapper.selectById(sessionId));
+
+                AgentSession s = sessionMapper.selectById(sessionId);
+                if (s != null) {
+                    s.setMessageCount(s.getMessageCount() + 2);
+                    sessionMapper.updateById(s);
+                }
+
+                // 触发 L1/L2 记忆更新
+                memoryService.afterMessage(
+                        sessionMapper.selectById(sessionId), toolMode, null, assistantMsg.getId());
+
                 emitter.send(SseEmitter.event().name("meta")
                         .data(Map.of("conversationId", sessionId, "suggestions",
                                 List.of("查询我的考勤", "请假流程是什么", "本月薪资明细"))));
@@ -154,28 +142,39 @@ public class AgentService {
         return emitter;
     }
 
+    /**
+     * 加载指定会话的全部消息（按 id 升序），用于 L3 运行时截断估算。
+     */
+    private List<AgentMessage> loadRecentMessages(Long sessionId) {
+        return messageMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<AgentMessage>()
+                        .eq("session_id", sessionId).orderByAsc("id"));
+    }
+
+    /**
+     * 获取或创建会话。首次创建时同时初始化 AssistantSessionContext 行。
+     */
     private AgentSession getOrCreateSession(AgentChatRequest request, Integer staffId) {
         if (request.getSessionId() != null) {
             AgentSession session = sessionMapper.selectById(request.getSessionId());
             if (session != null) return session;
         }
-
         AgentSession session = new AgentSession()
                 .setStaffId(staffId)
                 .setTitle(request.getMessage() != null
                         ? request.getMessage().substring(0, Math.min(50, request.getMessage().length()))
-                        : "新对话")
+                        : "新会话")
                 .setMode(request.getMode() != null ? request.getMode() : "CHAT")
-                .setMessageCount(0)
-                .setTotalTokens(0L)
-                .setCreatedAt(LocalDateTime.now())
-                .setUpdatedAt(LocalDateTime.now());
+                .setMessageCount(0).setTotalTokens(0L)
+                .setCreatedAt(LocalDateTime.now()).setUpdatedAt(LocalDateTime.now());
         sessionMapper.insert(session);
+        // 初始化上下文行，供记忆服务使用
+        AssistantSessionContext ctx = new AssistantSessionContext();
+        ctx.setSessionId(session.getId());
+        ctx.setContextVersion(0L);
+        ctx.setUpdateTime(LocalDateTime.now());
+        contextMapper.insert(ctx);
         return session;
-    }
-
-    private int estimateTokens(String text) {
-        return text == null ? 0 : Math.max(1, text.length() / 2);
     }
 
     /** 获取用户的历史会话列表 */
@@ -212,10 +211,22 @@ public class AgentService {
         }
     }
 
-    /** 删除会话 */
+    /** 删除会话及关联消息、上下文 */
     @Transactional
     public void deleteSession(Long sessionId) {
         messageMapper.deleteBySessionId(sessionId);
+        contextMapper.deleteById(sessionId);
         sessionMapper.deleteById(sessionId);
+    }
+
+    /**
+     * 加载前端展示用会话摘要（非 LLM 摘要，用于会话列表页展示）
+     *
+     * @param sessionId     会话 ID
+     * @param lastMessageAt 最后一条消息时间
+     * @return 摘要文本，无可复用摘要时返回 null
+     */
+    public String loadSummaryText(Long sessionId, LocalDateTime lastMessageAt) {
+        return summaryService.loadReusableSummary(sessionId, lastMessageAt);
     }
 }
