@@ -110,10 +110,13 @@ storage:
 # Agent 智能助手配置
 agent:
   memory:
-    l1-update-interval: ${AGENT_L1_INTERVAL:5}
-    l2-update-interval: ${AGENT_L2_INTERVAL:15}
-    max-tokens: ${AGENT_MAX_TOKENS:50000}
-    keep-recent: ${AGENT_KEEP_RECENT:5}
+    l1-message-trigger: 4
+    l1-token-trigger: 1200
+    l2-message-trigger: 6
+    l2-token-trigger: 1800
+    session-token-threshold: 6500
+    max-tokens: 50000
+    keep-recent: 3
 
 # 知识库模块配置
 knowledge:
