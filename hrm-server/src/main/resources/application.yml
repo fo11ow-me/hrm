@@ -118,6 +118,12 @@ agent:
     max-tokens: 50000
     keep-recent: 3
 
+  session:
+    summary:
+      message-threshold: 20
+      token-threshold: 8000
+      stale-days: 7
+
 # 知识库模块配置
 knowledge:
   enabled: ${KNOWLEDGE_ENABLED:false}
