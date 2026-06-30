@@ -75,6 +75,7 @@ docs/
 
 # 临时文件和重构备份
 tmp/
+.worktrees/
 *.bak
 
 # 本地开发运行时目录
