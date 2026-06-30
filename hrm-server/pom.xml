@@ -25,15 +25,15 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <skipUTs>false</skipUTs>
         <skipITs>false</skipITs>
-        <spring-ai.version>1.0.0-M6</spring-ai.version>
+        <spring-ai-alibaba.version>1.0.0.2</spring-ai-alibaba.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>org.springframework.ai</groupId>
-                <artifactId>spring-ai-bom</artifactId>
-                <version>${spring-ai.version}</version>
+                <groupId>com.alibaba.cloud.ai</groupId>
+                <artifactId>spring-ai-alibaba-bom</artifactId>
+                <version>${spring-ai-alibaba.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -79,17 +79,24 @@
             <artifactId>spring-retry</artifactId>
         </dependency>
 
-        <!-- Spring AI (OpenAI 兼容模式) -->
-        <!-- Spring AI OpenAI (指向百炼 DashScope 兼容端点) -->
+        <!-- Spring AI Alibaba (DashScope) -->
         <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-openai-spring-boot-starter</artifactId>
+            <groupId>com.alibaba.cloud.ai</groupId>
+            <artifactId>spring-ai-alibaba-starter-dashscope</artifactId>
         </dependency>
 
-        <!-- Spring AI pgvector -->
+        <!-- Spring AI pgvector (按 Spring AI Alibaba BOM 对齐的 1.0.0 GA 版本) -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-pgvector-store-spring-boot-starter</artifactId>
+            <artifactId>spring-ai-starter-vector-store-pgvector</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+
+        <!-- StringTemplate -->
+        <dependency>
+            <groupId>org.antlr</groupId>
+            <artifactId>ST4</artifactId>
+            <version>4.3.4</version>
         </dependency>
 
         <!-- SpringDoc OpenAPI (替代 Swagger) -->
