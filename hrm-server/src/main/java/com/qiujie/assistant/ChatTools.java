@@ -1,5 +1,6 @@
 package com.qiujie.assistant;
 
+import com.qiujie.controller.CityController;
 import com.qiujie.controller.*;
 import com.qiujie.dto.ResponseDTO;
 import com.qiujie.entity.StaffLeave;
@@ -21,6 +22,7 @@ public class ChatTools {
     @Autowired private StaffOvertimeController otCtrl;
     @Autowired private DeptController deptCtrl;
     @Autowired private StaffController staffCtrl;
+    @Autowired private CityController cityCtrl;
     @Autowired private SecurityUtil securityUtil;
 
     private Integer staffId() { return securityUtil.getCurrentOperatorId(); }
@@ -67,5 +69,10 @@ public class ChatTools {
     @Tool(description = "查询我的个人信息")
     public ResponseDTO myProfile() {
         return staffCtrl.queryInfo(staffId());
+    }
+
+    @Tool(description = "查询公司各城市的津贴标准列表")
+    public ResponseDTO cities() {
+        return cityCtrl.queryAll();
     }
 }
