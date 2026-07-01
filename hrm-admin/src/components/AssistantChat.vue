@@ -48,7 +48,7 @@
           />
         </div>
 
-        <div ref="messagesPane" class="assistant-messages">
+        <div ref="messagesPane" class="assistant-messages" @scroll="onScroll">
           <el-skeleton v-if="loading" :rows="3" animated style="padding:8px" />
           <div v-if="hasMore" class="load-more">
             <el-button size="mini" :loading="loadingMore" @click="loadMore">
@@ -231,6 +231,13 @@ export default {
           })
         }
       }).finally(() => { this.loadingMore = false })
+    },
+    onScroll () {
+      const pane = this.$refs.messagesPane
+      if (!pane || this.loadingMore) return
+      if (pane.scrollTop <= 20 && this.hasMore) {
+        this.loadMore()
+      }
     },
     confirmAction (item) {
       const { url, method } = item.action.api
