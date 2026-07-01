@@ -8,12 +8,14 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
- * Agent 消息实体 (MySQL)
+ * AI 助手消息实体 (MySQL)
+ *
+ * @author quuj
  */
 @Data
 @Accessors(chain = true)
-@TableName("agent_message")
-public class AgentMessage implements Serializable {
+@TableName("assistant_message")
+public class AssistantMessage implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
@@ -23,20 +25,21 @@ public class AgentMessage implements Serializable {
     @TableField("session_id")
     private Long sessionId;
 
-    /** user / assistant / tool */
+    /** USER / ASSISTANT / TOOL */
     @TableField("role")
     private String role;
+
+    /** CHAT / KB_SEARCH */
+    @TableField("tool_mode")
+    private String toolMode;
 
     @TableField("content")
     private String content;
 
-    /** 工具名称（仅 tool role） */
-    @TableField("tool_name")
-    private String toolName;
+    /** 结构化负载（JSON），TOOL 角色时存工具名/参数/结果/状态 */
+    @TableField("structured_payload")
+    private String structuredPayload;
 
-    @TableField("token_count")
-    private Integer tokenCount;
-
-    @TableField("created_at")
-    private LocalDateTime createdAt;
+    @TableField("create_time")
+    private LocalDateTime createTime;
 }
