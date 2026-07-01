@@ -139,16 +139,16 @@ export default {
       conversationId: null,
       conversations: [],
       messages: [],
-      suggestions: ['我的个人信息', '查询我的考勤', '我的调休余额'],
+      suggestions: ['我的个人信息', '查询我的考勤', '我的调休余额', '我的请假记录', '公司有哪些部门'],
       hasMore: false,
       nextCursor: null,
       question: '',
       quickQuestions: [
-        '我的考勤情况',
+        '我的个人信息',
+        '查询我的考勤',
+        '我的调休余额',
         '我的请假记录',
-        '我的加班情况',
-        '我的薪资摘要',
-        '怎么导入考勤数据'
+        '公司有哪些部门'
       ],
       intentLabels: {
         ATTENDANCE: '考勤',
@@ -199,7 +199,7 @@ export default {
     startNewConversation () {
       this.conversationId = null
       this.messages = []
-      this.suggestions = ['我的个人信息', '查询我的考勤', '我的调休余额']
+      this.suggestions = ['我的个人信息', '查询我的考勤', '我的调休余额', '我的请假记录', '公司有哪些部门']
       this.hasMore = false
       this.nextCursor = null
       this.question = ''
