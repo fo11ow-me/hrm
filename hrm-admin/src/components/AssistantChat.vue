@@ -183,7 +183,7 @@ export default {
       queryMessages(id, { size: 5 }).then(response => {
         if (response.code === 200) {
           const data = response.data || {}
-          this.messages = (data.records || []).reverse().map(item => ({
+          this.messages = (data.records || []).map(item => ({
             role: item.role,
             content: item.content,
             intent: item.intent
@@ -214,7 +214,7 @@ export default {
       }).then(response => {
         if (response.code === 200) {
           const data = response.data || {}
-          const older = (data.records || []).reverse().map(item => ({
+          const older = (data.records || []).map(item => ({
             role: item.role,
             content: item.content,
             intent: item.intent
