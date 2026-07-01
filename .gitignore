@@ -35,6 +35,7 @@ replay_pid*.log
 # Database exports and server-only material
 *.sql
 !hrm-server/src/test/resources/sql/*.sql
+!hrm-server/src/main/resources/db/migration/*.sql
 *.rdb
 /sql/
 /scripts/
