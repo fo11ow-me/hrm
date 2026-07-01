@@ -71,26 +71,33 @@ class ChatMemoryServiceUnitTest {
     }
 
     @Test
-    @DisplayName("shouldCompactSession: 双重条件满足返回 true")
-    void shouldCompactSession_bothConditionsMet() {
-        props.setSessionTokenThreshold(6500);
+    @DisplayName("shouldCompactSession: 新消息数达标返回 true")
+    void shouldCompactSession_messageCountMet() {
         props.setL2MessageTrigger(6);
         props.setL2TokenTrigger(1800);
 
-        // 总 token 7000 > 6500 且 6 条新消息
-        boolean result = shouldCompactSession(7000, 6, 100);
-        assertTrue(result, "总 token 超阈值且新消息达标应触发 L2");
+        boolean result = shouldCompactSession(6, 100);
+        assertTrue(result, "6 条新消息应触发 L2");
     }
 
     @Test
-    @DisplayName("shouldCompactSession: 总 token 不足返回 false")
-    void shouldNotCompactSession_whenTotalTokenLow() {
-        props.setSessionTokenThreshold(6500);
+    @DisplayName("shouldCompactSession: 新增 token 达标返回 true")
+    void shouldCompactSession_tokenMet() {
         props.setL2MessageTrigger(6);
         props.setL2TokenTrigger(1800);
 
-        boolean result = shouldCompactSession(3000, 10, 5000);
-        assertFalse(result, "总 token 不足 6500 不应触发 L2");
+        boolean result = shouldCompactSession(3, 2000);
+        assertTrue(result, "新增 2000 token 应触发");
+    }
+
+    @Test
+    @DisplayName("shouldCompactSession: 都不达标返回 false")
+    void shouldNotCompactSession_whenBelowThreshold() {
+        props.setL2MessageTrigger(6);
+        props.setL2TokenTrigger(1800);
+
+        boolean result = shouldCompactSession(3, 100);
+        assertFalse(result, "都不达标不应触发");
     }
 
     @Test
@@ -139,9 +146,8 @@ class ChatMemoryServiceUnitTest {
         return newMessages.size() >= props.getL1MessageTrigger() || tokens >= props.getL1TokenTrigger();
     }
 
-    private boolean shouldCompactSession(int totalTokens, int newMsgCount, int newTokens) {
-        return totalTokens > props.getSessionTokenThreshold()
-                && (newMsgCount >= props.getL2MessageTrigger() || newTokens >= props.getL2TokenTrigger());
+    private boolean shouldCompactSession(int newMsgCount, int newTokens) {
+        return newMsgCount >= props.getL2MessageTrigger() || newTokens >= props.getL2TokenTrigger();
     }
 
     private int estimateTokens(List<ChatMessage> messages) {
