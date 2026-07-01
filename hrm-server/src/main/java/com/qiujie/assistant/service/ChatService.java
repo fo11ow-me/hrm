@@ -224,8 +224,7 @@ public class ChatService {
                 // —— 发送流结束事件 ——
                 // event:meta 携带 conversationId 和快捷追问建议
                 emitter.send(SseEmitter.event().name("meta")
-                        .data(Map.of("conversationId", sessionId, "suggestions",
-                                List.of("我的个人信息", "查询我的考勤", "我的调休余额", "我的请假记录", "公司有哪些部门"))));
+                        .data(Map.of("conversationId", sessionId)));
                 emitter.complete();                                   // 通知客户端流正常结束
             } catch (Exception e) {
                 log.error("SSE send failed", e);

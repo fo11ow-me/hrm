@@ -87,18 +87,6 @@
           </div>
         </div>
 
-        <div class="assistant-suggestions" v-if="suggestions.length">
-          <el-button
-            v-for="item in suggestions"
-            :key="item"
-            size="mini"
-            plain
-            @click="sendQuickQuestion(item)"
-          >
-            {{ item }}
-          </el-button>
-        </div>
-
         <div class="assistant-input">
           <el-input
             v-model.trim="question"
@@ -139,7 +127,6 @@ export default {
       conversationId: null,
       conversations: [],
       messages: [],
-      suggestions: ['我的个人信息', '查询我的考勤', '我的调休余额', '我的请假记录', '公司有哪些部门'],
       hasMore: false,
       nextCursor: null,
       question: '',
@@ -199,7 +186,6 @@ export default {
     startNewConversation () {
       this.conversationId = null
       this.messages = []
-      this.suggestions = ['我的个人信息', '查询我的考勤', '我的调休余额', '我的请假记录', '公司有哪些部门']
       this.hasMore = false
       this.nextCursor = null
       this.question = ''
@@ -296,7 +282,6 @@ export default {
         },
         (meta) => {
           this.conversationId = meta.conversationId || this.conversationId
-          this.suggestions = meta.suggestions || []
           this.loadConversations()
           this.loading = false
         },
@@ -436,15 +421,10 @@ export default {
   font-weight: 600;
 }
 
-.quick-list,
-.assistant-suggestions {
+.quick-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-.assistant-suggestions {
-  padding: 10px 0 0;
 }
 
 .assistant-input {
