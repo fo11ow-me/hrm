@@ -2,7 +2,6 @@ package com.qiujie.dto;
 
 import com.qiujie.enums.BaseEnum;
 import com.qiujie.enums.BusinessStatusEnum;
-import org.apache.poi.ss.formula.functions.T;
 
 /**
  * 请求响应数据
@@ -41,7 +40,7 @@ public class Response {
         return new ResponseDTO(code,message);
     }
 
-    public static ResponseDTO error(BaseEnum<T> e) {
+    public static ResponseDTO error(BaseEnum<?> e) {
         return new ResponseDTO(e);
     }
 }

@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.annotation.EnumValue;
 import com.fasterxml.jackson.annotation.JsonValue;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import org.apache.poi.ss.formula.functions.T;
 
 /**
  * @Author qiujie
@@ -15,7 +14,7 @@ import org.apache.poi.ss.formula.functions.T;
 
 @Getter
 @AllArgsConstructor
-public enum OvertimeStatusEnum implements BaseEnum<T> {
+public enum OvertimeStatusEnum implements BaseEnum<Integer> {
 
     NORMAL(0, "正常","success"),
     OVERTIME(1, "加班",""),

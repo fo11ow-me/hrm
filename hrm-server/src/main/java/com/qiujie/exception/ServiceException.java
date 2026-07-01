@@ -2,7 +2,6 @@ package com.qiujie.exception;
 
 import com.qiujie.enums.BaseEnum;
 import lombok.Getter;
-import org.apache.poi.ss.formula.functions.T;
 
 /**
  * 自定义异常
@@ -18,7 +17,7 @@ public class ServiceException extends RuntimeException {
         this.code = code;
     }
 
-    public ServiceException(BaseEnum<T> e){
+    public ServiceException(BaseEnum<?> e) {
         super(e.getMessage());
         this.code = e.getCode();
     }

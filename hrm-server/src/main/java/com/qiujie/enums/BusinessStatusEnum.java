@@ -2,12 +2,11 @@ package com.qiujie.enums;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import org.apache.poi.ss.formula.functions.T;
 import org.springframework.http.HttpStatus;
 
 @Getter
 @AllArgsConstructor
-public enum BusinessStatusEnum implements BaseEnum<T> {
+public enum BusinessStatusEnum implements BaseEnum<Integer> {
 
     SUCCESS(200, "成功"),
     ERROR(300, "失败"),

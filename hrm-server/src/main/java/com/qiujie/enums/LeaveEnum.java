@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.annotation.EnumValue;
 import com.fasterxml.jackson.annotation.JsonValue;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import org.apache.poi.ss.formula.functions.T;
 
 /**
  * 休假枚举类
@@ -12,7 +11,7 @@ import org.apache.poi.ss.formula.functions.T;
 
 @Getter
 @AllArgsConstructor
-public enum LeaveEnum implements BaseEnum<T> {
+public enum LeaveEnum implements BaseEnum<Integer> {
     PERSONAL_LEAVE(0, "事假"),
     MATERNITY_LEAVE(1, "产假"),
     SICK_LEAVE(2, "病假"),

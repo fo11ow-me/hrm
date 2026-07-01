@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.annotation.EnumValue;
 import com.fasterxml.jackson.annotation.JsonValue;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import org.apache.poi.ss.formula.functions.T;
 
 /**
  * @Author qiujie
@@ -14,7 +13,7 @@ import org.apache.poi.ss.formula.functions.T;
 
 @Getter
 @AllArgsConstructor
-public enum AuditStatusEnum implements BaseEnum<T> {
+public enum AuditStatusEnum implements BaseEnum<Integer> {
 
     UNAUDITED(0, "待审核","info"),
     APPROVE(1, "审核通过","success"),

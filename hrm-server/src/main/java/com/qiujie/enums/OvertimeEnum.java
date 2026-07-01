@@ -5,12 +5,11 @@ import com.baomidou.mybatisplus.annotation.EnumValue;
 import com.fasterxml.jackson.annotation.JsonValue;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import org.apache.poi.ss.formula.functions.T;
 
 
 @Getter
 @AllArgsConstructor
-public enum OvertimeEnum implements BaseEnum<T> {
+public enum OvertimeEnum implements BaseEnum<Integer> {
 
     WORKDAY_OVERTIME(0, "工作日加班",1.5),
     HOLIDAY_OVERTIME(1, "节假日加班",3.0),

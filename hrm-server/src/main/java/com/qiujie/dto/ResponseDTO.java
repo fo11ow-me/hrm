@@ -3,13 +3,8 @@ package com.qiujie.dto;
 import com.qiujie.enums.BaseEnum;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
-import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
-import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.NoArgsConstructor;
-import io.swagger.v3.oas.annotations.media.Schema;
-import org.apache.poi.ss.formula.functions.T;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 @Data
 @AllArgsConstructor
@@ -39,18 +34,18 @@ public class ResponseDTO {
         this.data = data;
     }
 
-    public ResponseDTO(BaseEnum<T> e){
+    public ResponseDTO(BaseEnum<?> e){
         this.code = e.getCode();
         this.message = e.getMessage();
     }
 
-    public ResponseDTO(BaseEnum<T> e, Object data){
+    public ResponseDTO(BaseEnum<?> e, Object data){
         this.code = e.getCode();
         this.message = e.getMessage();
         this.data = data;
     }
 
-    public ResponseDTO(BaseEnum<T> e, Object data, String token){
+    public ResponseDTO(BaseEnum<?> e, Object data, String token){
         this.code = e.getCode();
         this.message = e.getMessage();
         this.data = data;

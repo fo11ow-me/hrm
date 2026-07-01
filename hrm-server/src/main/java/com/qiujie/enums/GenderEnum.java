@@ -4,11 +4,10 @@ import com.baomidou.mybatisplus.annotation.EnumValue;
 import com.fasterxml.jackson.annotation.JsonValue;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import org.apache.poi.ss.formula.functions.T;
 
 @Getter
 @AllArgsConstructor
-public enum GenderEnum implements BaseEnum<T>{
+public enum GenderEnum implements BaseEnum<Integer> {
 
     MALE(0,"男"),
     FEMALE(1,"女");
