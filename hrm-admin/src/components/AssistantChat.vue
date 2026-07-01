@@ -167,6 +167,7 @@ export default {
         return
       }
       this.loading = true
+      const t0 = Date.now()
       queryMessages(id, { size: 5 }).then(response => {
         if (response.code === 200) {
           const data = response.data || {}
@@ -181,7 +182,11 @@ export default {
         } else {
           this.$message.error(response.message)
         }
-      }).finally(() => { this.loading = false })
+      }).finally(() => {
+        const elapsed = Date.now() - t0
+        const minDelay = 300 // 骨架屏最短显示时间
+        setTimeout(() => { this.loading = false }, Math.max(0, minDelay - elapsed))
+      })
     },
     startNewConversation () {
       this.conversationId = null
