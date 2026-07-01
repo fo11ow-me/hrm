@@ -198,7 +198,7 @@ public class AgentService {
         Integer staffId = securityUtil.getCurrentOperatorId();
         return sessionMapper.selectList(
                 new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<AgentSession>()
-                        .eq("staff_id", staffId).orderByDesc("update_time"));
+                        .eq("staff_id", staffId).orderByDesc("updated_at"));
     }
 
     /** 获取单个会话详情 */
