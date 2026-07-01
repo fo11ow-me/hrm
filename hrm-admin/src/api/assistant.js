@@ -74,11 +74,10 @@ export const queryConversation = (id) => {
   })
 }
 
-export const queryMessages = (id, params) => {
+export const queryMessages = (id) => {
   return request({
     url: url + '/conversations/' + id + '/messages',
-    method: 'get',
-    params
+    method: 'get'
   })
 }
 

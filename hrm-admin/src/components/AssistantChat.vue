@@ -184,16 +184,15 @@ export default {
         return
       }
       this.loading = true
-      queryMessages(id, { size: 20 }).then(response => {
+      queryMessages(id).then(response => {
         if (response.code === 200) {
-          const data = response.data || {}
-          this.messages = (data.records || []).reverse().map(item => ({
+          const list = response.data || []
+          this.messages = list.reverse().map(item => ({
             role: item.role,
             content: item.content,
             intent: item.intent
           }))
-          this.hasMore = data.hasMore
-          this.nextCursor = data.nextCursor
+          this.hasMore = false
           this.scrollToBottom()
         } else {
           this.$message.error(response.message)
@@ -212,22 +211,8 @@ export default {
       if (!this.hasMore || this.loadingMore) return
       this.loadingMore = true
       const prevHeight = this.$refs.messagesPane.scrollHeight
-      queryMessages(this.conversationId, { size: 20, before: this.nextCursor }).then(response => {
-        if (response.code === 200) {
-          const data = response.data || {}
-          const older = (data.records || []).reverse().map(item => ({
-            role: item.role,
-            content: item.content,
-            intent: item.intent
-          }))
-          this.messages.unshift(...older)
-          this.hasMore = data.hasMore
-          this.nextCursor = data.nextCursor
-          this.$nextTick(() => {
-            this.$refs.messagesPane.scrollTop = this.$refs.messagesPane.scrollHeight - prevHeight
-          })
-        }
-      }).finally(() => { this.loadingMore = false })
+      // 后端已返回全量消息，无需分页加载
+      this.loadingMore = false
     },
     confirmAction (item) {
       const { url, method } = item.action.api
