@@ -1,5 +1,6 @@
 package com.qiujie.assistant.service;
 
+import com.qiujie.assistant.ChatTools;
 import com.qiujie.assistant.dto.ChatRequest;
 import com.qiujie.assistant.entity.ChatMessage;
 import com.qiujie.assistant.entity.ChatSession;
@@ -39,6 +40,7 @@ public class ChatService {
     private final SecurityUtil securityUtil;
     private final ChatMemoryProperties memoryProps;
     private final ChatClient chatClient;
+    private final ChatTools chatTools;
 
     public ChatService(ChatSessionMapper sessionMapper,
             ChatMessageMapper messageMapper,
@@ -47,7 +49,8 @@ public class ChatService {
             ChatSessionSummaryService summaryService,
             SecurityUtil securityUtil,
             ChatMemoryProperties memoryProps,
-            ChatClient.Builder chatClientBuilder) {
+            ChatClient.Builder chatClientBuilder,
+            ChatTools chatTools) {
         this.sessionMapper = sessionMapper;
         this.messageMapper = messageMapper;
         this.contextMapper = contextMapper;
@@ -56,6 +59,7 @@ public class ChatService {
         this.securityUtil = securityUtil;
         this.memoryProps = memoryProps;
         this.chatClient = chatClientBuilder.build();
+        this.chatTools = chatTools;
     }
 
     @Transactional
@@ -101,7 +105,8 @@ public class ChatService {
 
             var prompt = chatClient.prompt()
                     .messages(historyMessages)
-                    .user(request.getMessage());
+                    .user(request.getMessage())
+                    .tools(chatTools);
             if (memoryContext != null && !memoryContext.isBlank()) {
                 prompt = prompt.system(s -> s.text(memoryContext));
             }
