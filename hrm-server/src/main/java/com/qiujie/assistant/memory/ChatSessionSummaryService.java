@@ -47,16 +47,8 @@ public class ChatSessionSummaryService {
             @Value("${chat.session.summary.message-threshold:20}") int messageThreshold,
             @Value("${chat.session.summary.token-threshold:8000}") int tokenThreshold,
             @Value("${chat.session.summary.stale-days:7}") int staleDays) {
-        this(contextMapper, Clock.systemDefaultZone(), messageThreshold, tokenThreshold, staleDays);
-    }
-
-    /**
-     * 包级可见全参构造（用于测试注入 Clock）
-     */
-    ChatSessionSummaryService(ChatSessionContextMapper contextMapper, Clock clock,
-                                   int messageThreshold, int tokenThreshold, int staleDays) {
         this.contextMapper = contextMapper;
-        this.clock = clock;
+        this.clock = Clock.systemDefaultZone();
         this.messageThreshold = messageThreshold;
         this.tokenThreshold = tokenThreshold;
         this.staleDays = staleDays;

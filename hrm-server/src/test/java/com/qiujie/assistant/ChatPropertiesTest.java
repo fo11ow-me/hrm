@@ -8,19 +8,19 @@ import org.springframework.test.util.ReflectionTestUtils;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * AssistantProperties 安全配置测试
+ * ChatProperties 安全配置测试
  *
  * @author qiujie
  * @date 2026-06-09
  */
 @DisplayName("助手服务安全配置测试")
-class AssistantPropertiesTest {
+class ChatPropertiesTest {
 
-    private AssistantProperties properties;
+    private ChatProperties properties;
 
     @BeforeEach
     void setUp() {
-        properties = new AssistantProperties();
+        properties = new ChatProperties();
     }
 
     // ==================== API Key 验证测试 ====================

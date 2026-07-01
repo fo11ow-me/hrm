@@ -99,12 +99,13 @@ public class ChatService {
                 }
             }
 
-            answer = chatClient.prompt()
-                    .system(s -> s.text(memoryContext))
+            var prompt = chatClient.prompt()
                     .messages(historyMessages)
-                    .user(request.getMessage())
-                    .call()
-                    .content();
+                    .user(request.getMessage());
+            if (memoryContext != null && !memoryContext.isBlank()) {
+                prompt = prompt.system(s -> s.text(memoryContext));
+            }
+            answer = prompt.call().content();
         } catch (Exception e) {
             log.error("LLM call failed", e);
             answer = "抱歉，AI 服务暂时不可用，请稍后重试。";
