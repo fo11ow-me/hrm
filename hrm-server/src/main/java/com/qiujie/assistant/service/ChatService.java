@@ -23,6 +23,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -212,11 +213,29 @@ public class ChatService {
         return sessionMapper.selectById(sessionId);
     }
 
-    /** 获取会话消息历史 */
-    public List<ChatMessage> listMessages(Long sessionId) {
-        return messageMapper.selectList(
-                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<ChatMessage>()
-                        .eq("session_id", sessionId).orderByAsc("id"));
+    /** 获取会话消息历史（游标分页：before 为上一页最后一条消息 ID，默认最近 5 条） */
+    public Map<String, Object> listMessages(Long sessionId, Long before, int size) {
+        int limit = Math.min(size, 50); // 单次最多 50 条
+        var qw = new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<ChatMessage>()
+                .eq("session_id", sessionId);
+        if (before != null) {
+            qw.lt("id", before); // 游标：id < before
+        }
+        qw.orderByDesc("id").last("LIMIT " + (limit + 1)); // 多取一条判断 hasMore
+
+        List<ChatMessage> desc = messageMapper.selectList(qw);
+        boolean hasMore = desc.size() > limit;
+        if (hasMore) desc = desc.subList(0, limit);
+
+        java.util.Collections.reverse(desc); // 恢复升序
+
+        Long nextCursor = desc.isEmpty() ? null : desc.get(0).getId();
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("records", desc);
+        result.put("hasMore", hasMore);
+        result.put("nextCursor", nextCursor);
+        return result;
     }
 
     private static final Set<String> VALID_MODES = Set.of("CHAT", "KB_SEARCH");

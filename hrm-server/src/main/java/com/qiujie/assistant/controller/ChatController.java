@@ -92,16 +92,14 @@ public class ChatController {
     }
 
     /**
-     * 分页获取会话的历史消息。
-     * <p>
-     * 前端打开历史会话时调用，一次加载最近 20 条，
-     * 上滑时通过 before 游标加载更早的消息，实现向前翻页。
-     * </p>
+     * 游标分页获取会话历史消息，默认最近 5 条。
+     * before 为上一页首条消息 ID（最早的那条），滚动加载更早消息。
      */
-    @GetMapping("/conversations/{id}/messages") // GET /assistant/conversations/{id}/messages —— 子资源查询
-    public ResponseDTO listMessages(@PathVariable Long id) {
-        List<ChatMessage> messages = chatService.listMessages(id); // 按 session_id 查询并按 id 升序排列
-        return Response.success(messages);
+    @GetMapping("/conversations/{id}/messages")
+    public ResponseDTO listMessages(@PathVariable Long id,
+            @RequestParam(defaultValue = "5") int size,
+            @RequestParam(required = false) Long before) {
+        return Response.success(chatService.listMessages(id, before, size));
     }
 
     /**

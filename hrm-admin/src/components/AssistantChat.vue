@@ -184,15 +184,16 @@ export default {
         return
       }
       this.loading = true
-      queryMessages(id).then(response => {
+      queryMessages(id, { size: 5 }).then(response => {
         if (response.code === 200) {
-          const list = response.data || []
-          this.messages = list.reverse().map(item => ({
+          const data = response.data || {}
+          this.messages = (data.records || []).reverse().map(item => ({
             role: item.role,
             content: item.content,
             intent: item.intent
           }))
-          this.hasMore = false
+          this.hasMore = data.hasMore || false
+          this.nextCursor = data.nextCursor || null
           this.scrollToBottom()
         } else {
           this.$message.error(response.message)
@@ -211,8 +212,22 @@ export default {
       if (!this.hasMore || this.loadingMore) return
       this.loadingMore = true
       const prevHeight = this.$refs.messagesPane.scrollHeight
-      // 后端已返回全量消息，无需分页加载
-      this.loadingMore = false
+      queryMessages(this.conversationId, { size: 5, before: this.nextCursor }).then(response => {
+        if (response.code === 200) {
+          const data = response.data || {}
+          const older = (data.records || []).reverse().map(item => ({
+            role: item.role,
+            content: item.content,
+            intent: item.intent
+          }))
+          this.messages.unshift(...older)
+          this.hasMore = data.hasMore || false
+          this.nextCursor = data.nextCursor || null
+          this.$nextTick(() => {
+            this.$refs.messagesPane.scrollTop = this.$refs.messagesPane.scrollHeight - prevHeight
+          })
+        }
+      }).finally(() => { this.loadingMore = false })
     },
     confirmAction (item) {
       const { url, method } = item.action.api
