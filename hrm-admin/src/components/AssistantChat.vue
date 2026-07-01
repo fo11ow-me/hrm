@@ -130,7 +130,7 @@
 </template>
 
 <script>
-import { chat, deleteConversation, listConversations, queryMessages } from '@/api/assistant'
+import { chatStream, deleteConversation, listConversations, queryMessages } from '@/api/assistant'
 import request from '@/utils/request'
 
 export default {
@@ -280,40 +280,27 @@ export default {
       this.question = ''
       this.loading = true
       this.scrollToBottom()
-      chat({
-        conversationId: this.conversationId,
-        scene: 'employee_self_service',
-        message: content
-      }).then(response => {
-        if (response.code === 200) {
-          const data = response.data || {}
-          this.conversationId = data.conversationId
-          this.suggestions = data.suggestions || []
-          this.messages.push({
-            role: 'ASSISTANT',
-            content: data.answer,
-            intent: data.intent,
-            llmEnhanced: data.llmEnhanced,
-            action: data.action
-          })
+      this.messages.push({ role: 'ASSISTANT', content: '' })
+      const assistantMsg = this.messages[this.messages.length - 1]
+      chatStream(
+        { conversationId: this.conversationId, message: content, mode: 'CHAT' },
+        (token) => {
+          assistantMsg.content += token
+          this.scrollToBottom()
+        },
+        (meta) => {
+          this.conversationId = meta.conversationId || this.conversationId
+          this.suggestions = meta.suggestions || []
           this.loadConversations()
-        } else {
-          this.messages.push({
-            role: 'ASSISTANT',
-            content: response.message || '智能助手暂时不可用',
-            intent: 'UNKNOWN'
-          })
+          this.loading = false
+        },
+        () => {
+          if (!assistantMsg.content) {
+            assistantMsg.content = '智能助手暂时不可用，请稍后再试。'
+          }
+          this.loading = false
         }
-      }).catch(() => {
-        this.messages.push({
-          role: 'ASSISTANT',
-          content: '智能助手暂时不可用，请稍后再试。',
-          intent: 'UNKNOWN'
-        })
-      }).finally(() => {
-        this.loading = false
-        this.scrollToBottom()
-      })
+      )
     },
     scrollToBottom () {
       this.$nextTick(() => {

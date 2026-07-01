@@ -57,16 +57,15 @@ public class ChatMemorySummarizer {
      * @param existingSessionMemory 已有的会话记忆（可能为空）
      * @param newMessages           本轮新增的消息列表
      * @param toolMode              当前工具模式
-     * @param groupId               当前分组 ID（可能为 null）
      * @return 新的会话记忆摘要
      */
     public String summarizeSessionMemory(
-            String existingSessionMemory, List<ChatMessage> newMessages, String toolMode, Long groupId) {
+            String existingSessionMemory, List<ChatMessage> newMessages, String toolMode) {
         return callForText(sessionMemoryPromptTemplate.create(Map.of(
                 "existingSessionMemory", defaultText(existingSessionMemory),
                 "newMessages", formatMessages(newMessages),
                 "currentToolMode", defaultText(toolMode),
-                "currentGroupId", groupId == null ? "NONE" : String.valueOf(groupId)
+                "currentGroupId", "NONE"
         )));
     }
 

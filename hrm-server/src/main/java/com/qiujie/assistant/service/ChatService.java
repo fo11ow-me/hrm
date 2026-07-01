@@ -142,7 +142,7 @@ public class ChatService {
 
                 // 触发 L1/L2 记忆更新
                 memoryService.afterMessage(
-                        sessionMapper.selectById(sessionId), toolMode, null, assistantMsg.getId());
+                        sessionMapper.selectById(sessionId), toolMode, assistantMsg.getId());
 
                 emitter.send(SseEmitter.event().name("meta")
                         .data(Map.of("conversationId", sessionId, "suggestions",
