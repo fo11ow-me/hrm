@@ -203,11 +203,10 @@ public class ChatMemoryService {
 
         // —— L2 判断：会话总 token 超阈值且增量达标时，生成紧凑摘要 ——
         if (shouldCompactSession(totalTokens, newMessages.size(), newTokens)) {
-            // 输入：已有 L2 + 新生成的 L1 + 当前消息之前的全部消息
+            // L2 只依赖 L1：旧摘要 + 当前累计记忆 → 新摘要（不读原始消息）
             toWrite.setCompactSummary(summarizer.summarizeCompactSummary(
                     ctx.getCompactSummary(),                    // 已有 L2 摘要
-                    toWrite.getSessionMemory(),                 // 刚生成的 L1 记忆
-                    collectMessagesBefore(allMessages, currentMessageId))); // L2 覆盖的消息范围
+                    toWrite.getSessionMemory()));               // 刚生成的 L1 记忆（已包含对话全貌）
             toWrite.setCompactSummaryBaseMessageId(allMessages.get(0).getId()); // L2 起始消息 ID
             toWrite.setCompactSummaryRangeEndMessageId(
                     newMessages.get(newMessages.size() - 1).getId()); // L2 结束消息 ID
@@ -300,26 +299,6 @@ public class ChatMemoryService {
                 .mapToInt(String::length)               // 获取字符串长度
                 .sum();                                  // 累加所有字符数
         return Math.max(1, totalChars / TOKEN_DIVISOR); // 至少返回 1，避免除零边界
-    }
-
-    /**
-     * 收集当前消息 ID 之前的全部消息。
-     * <p>
-     * L2 压缩的输入范围：从会话首条消息到当前轮次之前的消息。
-     * 过滤掉 null ID 和 currentMessageId 为 null 的情况作为防御。
-     * </p>
-     *
-     * @param all             会话全部消息（按 id 升序）
-     * @param currentMessageId 当前轮次最后一条消息 ID
-     * @return currentMessageId 之前的消息子列表
-     */
-    private List<ChatMessage> collectMessagesBefore(
-            List<ChatMessage> all, Long currentMessageId) {
-        return all.stream()
-                .filter(m -> currentMessageId == null          // currentMessageId 为 null：不筛选
-                        || m.getId() == null                    // 消息 id 为 null：不纳入
-                        || m.getId() < currentMessageId)        // id 小于当前消息 ID
-                .collect(Collectors.toList());
     }
 
     /**

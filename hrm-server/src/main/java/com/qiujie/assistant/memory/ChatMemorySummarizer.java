@@ -70,19 +70,18 @@ public class ChatMemorySummarizer {
     }
 
     /**
-     * L2: 将紧凑摘要与会话记忆合并，生成更精简的持久化摘要。
+     * L2: 纯记忆压缩——只依赖 L1 记忆，不读原始消息。
+     * L1 本身已是增量累计的语义要点，L2 仅需进一步精炼。
      *
      * @param existingCompactSummary 已有的紧凑摘要（可能为空）
-     * @param sessionMemory          当前的会话记忆
-     * @param messagesToCompact      待压缩的消息列表
+     * @param sessionMemory          当前的 L1 会话记忆（已包含对话全貌）
      * @return 新的紧凑摘要
      */
     public String summarizeCompactSummary(
-            String existingCompactSummary, String sessionMemory, List<ChatMessage> messagesToCompact) {
+            String existingCompactSummary, String sessionMemory) {
         return callForText(compactSummaryPromptTemplate.create(Map.of(
                 "existingCompactSummary", defaultText(existingCompactSummary),
-                "sessionMemory", defaultText(sessionMemory),
-                "messagesToCompact", formatMessages(messagesToCompact)
+                "sessionMemory", defaultText(sessionMemory)
         )));
     }
 
