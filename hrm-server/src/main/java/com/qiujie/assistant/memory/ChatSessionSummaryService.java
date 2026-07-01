@@ -3,6 +3,7 @@ package com.qiujie.assistant.memory;
 import com.qiujie.assistant.entity.ChatMessage;
 import com.qiujie.assistant.entity.ChatSessionContext;
 import com.qiujie.assistant.mapper.ChatSessionContextMapper;
+import com.qiujie.assistant.service.ChatMemoryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,8 +27,6 @@ public class ChatSessionSummaryService {
     private static final Logger log = LoggerFactory.getLogger(ChatSessionSummaryService.class);
     private static final int SUMMARY_CHAR_LIMIT = 2000;
     private static final int PER_MESSAGE_CHAR_LIMIT = 160;
-    private static final int TOKEN_DIVISOR = 4;
-
     private final ChatSessionContextMapper contextMapper;
     private final Clock clock;
     private final int messageThreshold;
@@ -90,20 +89,9 @@ public class ChatSessionSummaryService {
         return ChronoUnit.DAYS.between(lastMessageAt, LocalDateTime.now(clock)) > staleDays;
     }
 
-    /**
-     * 估算消息列表的 token 数量（字符数 / 4）。
-     *
-     * @param messages 消息列表
-     * @return 估算的 token 数
-     */
+    /** 估算消息列表 token 数——统一调用 ChatMemoryService 的静态方法，保持全局一致 */
     public int estimateTokens(List<ChatMessage> messages) {
-        if (messages == null || messages.isEmpty()) return 0;
-        int totalChars = messages.stream()
-                .map(ChatMessage::getContent)
-                .filter(c -> c != null && !c.isBlank())
-                .mapToInt(String::length)
-                .sum();
-        return Math.max(1, totalChars / TOKEN_DIVISOR);
+        return ChatMemoryService.estimateTokens(messages);
     }
 
     /**

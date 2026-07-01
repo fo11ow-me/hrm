@@ -35,8 +35,8 @@ public class ChatMemoryService {
     /** 日志门面，实际输出到 Logback */
     private static final Logger log = LoggerFactory.getLogger(ChatMemoryService.class);
 
-    /** token 估算除数：中英文混合场景下约 4 字符 ≈ 1 token */
-    private static final int TOKEN_DIVISOR = 4;
+    /** token 估算除数：中英文混合场景下约 2 字符 ≈ 1 token */
+    static final int TOKEN_DIVISOR = 2;
 
     // 以下四个依赖均为构造注入的不可变字段，保证线程安全
 
@@ -289,7 +289,7 @@ public class ChatMemoryService {
      * @param messages 消息列表
      * @return 估算 token 数，空列表返回 0
      */
-    int estimateTokens(List<ChatMessage> messages) {
+    public static int estimateTokens(List<ChatMessage> messages) {
         if (messages == null || messages.isEmpty()) {
             return 0;                  // 空列表无 token
         }

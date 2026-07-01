@@ -19,6 +19,7 @@ import org.springframework.ai.chat.messages.Message;          // Spring AI 消�
 import org.springframework.ai.chat.messages.UserMessage;      // Spring AI 用户消息类型
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional; // 声明式事务
+import org.springframework.transaction.support.TransactionTemplate; // 编程式事务——SSE 异步线程使用
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter; // SSE 长连接推送
 
 import java.time.LocalDateTime;
@@ -63,6 +64,8 @@ public class ChatService {
     private final ChatClient chatClient;
     /** @Tool 注解的方法集合，作为 function calling 工具注入 LLM */
     private final ChatTools chatTools;
+    /** 编程式事务——SSE 异步线程中管理持久化事务 */
+    private final TransactionTemplate txTemplate;
 
     /**
      * 构造注入所有依赖。
@@ -76,7 +79,8 @@ public class ChatService {
             SecurityUtil securityUtil,
             ChatMemoryProperties memoryProps,
             ChatClient.Builder chatClientBuilder, // Spring AI 自动配置提供的 Builder
-            ChatTools chatTools) {
+            ChatTools chatTools,
+            TransactionTemplate txTemplate) {
         this.sessionMapper = sessionMapper;
         this.messageMapper = messageMapper;
         this.contextMapper = contextMapper;
@@ -86,6 +90,7 @@ public class ChatService {
         this.memoryProps = memoryProps;
         this.chatClient = chatClientBuilder.build(); // build() 后 ChatClient 线程安全可复用
         this.chatTools = chatTools;
+        this.txTemplate = txTemplate; // SSE 异步线程用编程式事务
     }
 
     /**
@@ -154,11 +159,16 @@ public class ChatService {
                 }
             }
 
+            // L3 与 L2 去重：L2 摘要已覆盖全局，截断后跳过重叠的原始消息
+            if (memoryContext != null && !memoryContext.isBlank()) {
+                historyMessages.clear();
+            }
+
             // 构建 Prompt：历史消息 + 当前问题 + function calling 工具集
             var prompt = chatClient.prompt()
-                    .messages(historyMessages)          // 截断后的历史消息
-                    .user(request.getMessage())         // 当前用户问题
-                    .tools(chatTools);                  // @Tool 方法集，LLM 可自主选择调用
+                    .messages(historyMessages)
+                    .user(request.getMessage())
+                    .tools(chatTools);
             if (memoryContext != null && !memoryContext.isBlank()) {
                 prompt = prompt.system(s -> s.text(memoryContext)); // L1+L2 记忆作为 system prompt
             }
@@ -192,25 +202,24 @@ public class ChatService {
                     if (i % 5 == 0) Thread.sleep(5);                   // 控制推送速度
                 }
 
-                // —— 持久化助手消息 ——
-                ChatMessage assistantMsg = new ChatMessage()
-                        .setSessionId(sessionId)
-                        .setRole("ASSISTANT")
-                        .setContent(finalAnswer)
-                        .setCreateTime(LocalDateTime.now());
-                messageMapper.insert(assistantMsg);
+                // —— 持久化 + 记忆更新（编程式事务，SSE 线程不受 @Transactional 覆盖） ——
+                txTemplate.executeWithoutResult(status -> {
+                    ChatMessage assistantMsg = new ChatMessage()
+                            .setSessionId(sessionId)
+                            .setRole("ASSISTANT")
+                            .setContent(finalAnswer)
+                            .setCreateTime(LocalDateTime.now());
+                    messageMapper.insert(assistantMsg);
 
-                // —— 更新会话统计 ——
-                ChatSession s = sessionMapper.selectById(sessionId);    // 重新查询拿最新数据
-                if (s != null) {
-                    s.setMessageCount(s.getMessageCount() + 2);         // +2 = USER + ASSISTANT
-                    sessionMapper.updateById(s);
-                }
+                    ChatSession s = sessionMapper.selectById(sessionId);
+                    if (s != null) {
+                        s.setMessageCount(s.getMessageCount() + 2);
+                        sessionMapper.updateById(s);
+                    }
 
-                // —— 触发 L1/L2 记忆更新 ——
-                // 传入当前会话（含最新 messageCount）、工具模式、最后一条消息 ID
-                memoryService.afterMessage(
-                        sessionMapper.selectById(sessionId), toolMode, assistantMsg.getId());
+                    memoryService.afterMessage(
+                            sessionMapper.selectById(sessionId), toolMode, assistantMsg.getId());
+                });
 
                 // —— 发送流结束事件 ——
                 // event:meta 携带 conversationId 和快捷追问建议
