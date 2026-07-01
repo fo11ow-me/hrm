@@ -39,6 +39,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.servlet.http.HttpServletResponse;
+
 import java.io.File;
 import java.io.IOException;
 import java.sql.Date;
@@ -567,7 +568,7 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
             Map<Integer, Staff> staffMap = staffIds.isEmpty()
                     ? new HashMap<>()
                     : AttendanceService.this.staffMapper.selectBatchIds(staffIds).stream()
-                            .collect(Collectors.toMap(Staff::getId, item -> item));
+                    .collect(Collectors.toMap(Staff::getId, item -> item));
             Set<Integer> deptIds = staffMap.values().stream()
                     .map(Staff::getDeptId)
                     .filter(item -> item != null)
@@ -575,7 +576,7 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
             Map<Integer, Dept> deptMap = deptIds.isEmpty()
                     ? new HashMap<>()
                     : AttendanceService.this.deptMapper.selectBatchIds(deptIds).stream()
-                            .collect(Collectors.toMap(Dept::getId, item -> item));
+                    .collect(Collectors.toMap(Dept::getId, item -> item));
             Set<Date> attendanceDates = rows.stream()
                     .map(AttendanceImportRow::getAttendanceDate)
                     .filter(item -> item != null)

@@ -89,8 +89,9 @@ public class FileTaskController {
     public ResponseDTO uploadChunk(
             @RequestParam("uploadId") String uploadId,
             @RequestParam("chunkIndex") Integer chunkIndex,
+            @RequestParam(value = "chunkHash", required = false) String chunkHash,
             @RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
-        return fileUploadService.uploadChunk(uploadId, chunkIndex, file);
+        return fileUploadService.uploadChunk(uploadId, chunkIndex, chunkHash, file);
     }
 
     @PreAuthorize("hasAnyAuthority('system:docs:upload','performance:attendance:import','performance:overtime:import','performance:leave:import','money:salary:import')")
@@ -101,12 +102,5 @@ public class FileTaskController {
         Map<String, Object> result = new HashMap<>();
         result.put("mergedKey", mergedKey);
         return Response.success(result);
-    }
-
-    @PreAuthorize("hasAnyAuthority('system:docs:upload','performance:attendance:import','performance:overtime:import','performance:leave:import','money:salary:import')")
-    @Operation(summary = "小文件直接上传（< 5MB 不走分片）")
-    @PostMapping("/upload/direct")
-    public ResponseDTO uploadDirect(@RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
-        return fileUploadService.uploadDirect(file, securityUtil.getCurrentOperatorId());
     }
 }

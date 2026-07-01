@@ -28,14 +28,23 @@ import java.util.stream.Collectors;
 
 /**
  * 三阶段分片上传服务。
- * init → chunk upload → complete，支持秒传和断点续传。
+ *
+ * 协议流程：
+ *   ① init   → 创建上传会话（秒传/断点续传/新建）
+ *   ② chunks → 逐片上传分片到 MinIO（幂等，已传分片自动跳过）
+ *   ③ complete → 合并分片为完整文件，回调业务 handler 执行后续逻辑
+ *
+ * 支持秒传（同 hash 文件已存在时跳过上传）和断点续传（未过期会话可续传未完成分片）。
  */
 @Service
 public class FileUploadService {
 
     private static final Logger log = LoggerFactory.getLogger(FileUploadService.class);
-    private static final long MAX_FILE_SIZE = 256 * 1024 * 1024L; // 256MB
-    private static final long MAX_CHUNK_SIZE = 10 * 1024 * 1024L;   // 10MB
+    /** 单文件最大 256MB */
+    private static final long MAX_FILE_SIZE = 256 * 1024 * 1024L;
+    /** 单分片最大 10MB */
+    private static final long MAX_CHUNK_SIZE = 10 * 1024 * 1024L;
+    /** 上传会话有效期 24 小时，超时后定时清理 */
     private static final int SESSION_TTL_HOURS = 24;
 
     @Autowired
@@ -49,20 +58,36 @@ public class FileUploadService {
 
     /**
      * 阶段1：初始化上传会话。
-     * 优先级：秒传 → 断点续传(未过期会话) → 新建会话
+     *
+     * 三级优先级决策：
+     *   1. 秒传 — handler.checkDedup(fileHash) 命中 → 直接返回已有文件信息，跳过上传
+     *   2. 断点续传 — 同 staffId + fileHash 存在 INIT/UPLOADING 状态会话 → 返回已有 uploadId 和已传分片列表
+     *   3. 新建会话 — 写入 kb_upload_session，返回 uploadId、chunkSize、chunkCount
+     *
+     * @param fileName  原始文件名，如 "员工手册.pdf"
+     * @param fileExt   文件扩展名（不含点），如 "pdf"
+     * @param fileSize  文件总大小（字节）
+     * @param fileHash  文件 SHA-256 哈希，用于秒传去重和断点续传匹配
+     * @param chunkSize 单个分片大小（字节），前端默认 5MB
+     * @param staffId   当前操作员工 ID
+     * @param handler   业务回调处理器，知识库传入 KbUploadCompletionHandler，通用导入传入 null
+     * @return uploadId + 可选 chunkSize/chunkCount/instantUpload/resumed/uploadedChunks
      */
     @Transactional
     public ResponseDTO initUpload(String fileName, String fileExt, Long fileSize,
                                    String fileHash, Long chunkSize,
                                    Integer staffId, UploadCompletionHandler handler) {
+        // 文件大小校验
         if (fileSize > MAX_FILE_SIZE) {
             return Response.error("文件大小超过限制，最大256MB");
         }
+        // 分片大小校验
         if (chunkSize > MAX_CHUNK_SIZE) {
             return Response.error("分片大小超过限制，最大10MB");
         }
 
-        // 秒传检测（无 handler 的场景如导入任务跳过）
+        // —— 优先级 1: 秒传 ——
+        // handler 为 null 时跳过（通用导入场景无需去重）
         if (handler != null) {
             Map<String, Object> dedup = handler.checkDedup(fileHash);
             if (dedup != null && !dedup.isEmpty()) {
@@ -71,7 +96,8 @@ public class FileUploadService {
             }
         }
 
-        // 断点续传：查找未过期的会话（INIT 或 UPLOADING 状态均可续传）
+        // —— 优先级 2: 断点续传 ——
+        // 查找同一用户上传的相同 hash 且未完成/未过期的会话
         List<KbUploadSession> sessions = sessionMapper.selectList(
                 new QueryWrapper<KbUploadSession>()
                         .eq("staff_id", staffId)
@@ -79,6 +105,7 @@ public class FileUploadService {
                         .in("status", "INIT", "UPLOADING"));
         if (!sessions.isEmpty()) {
             KbUploadSession session = sessions.get(0);
+            // 返回已上传的分片索引列表，前端据此跳过已传分片
             List<Integer> uploadedChunks = chunkMapper.selectList(
                     new QueryWrapper<KbUploadChunk>().eq("upload_id", session.getUploadId()))
                     .stream().map(KbUploadChunk::getChunkIndex).collect(Collectors.toList());
@@ -90,7 +117,7 @@ public class FileUploadService {
             return Response.success("恢复上传会话", result);
         }
 
-        // 新建会话
+        // —— 优先级 3: 新建会话 ——
         int chunkCount = (int) Math.ceil((double) fileSize / chunkSize);
         String uploadId = IdUtil.fastSimpleUUID();
         KbUploadSession session = new KbUploadSession()
@@ -103,6 +130,7 @@ public class FileUploadService {
                 .setChunkSize(chunkSize)
                 .setChunkCount(chunkCount)
                 .setStatus("INIT")
+                // 24 小时后过期，定时任务 cleanExpiredSessions() 清理
                 .setExpiresAt(LocalDateTime.now().plusHours(SESSION_TTL_HOURS));
         sessionMapper.insert(session);
 
@@ -116,10 +144,10 @@ public class FileUploadService {
     }
 
     /**
-     * 阶段2：上传单个分片（幂等）。
+     * 阶段2：上传单个分片（幂等），校验分片哈希确保传输完整性。
      */
     @Transactional
-    public ResponseDTO uploadChunk(String uploadId, Integer chunkIndex, MultipartFile file) {
+    public ResponseDTO uploadChunk(String uploadId, Integer chunkIndex, String chunkHash, MultipartFile file) {
         KbUploadSession session = sessionMapper.selectById(uploadId);
         if (session == null || session.getExpiresAt().isBefore(LocalDateTime.now())) {
             return Response.error("上传会话不存在或已过期");
@@ -134,12 +162,18 @@ public class FileUploadService {
         String storagePath = String.format("uploads/%s/chunks/%d", uploadId, chunkIndex);
         try {
             byte[] bytes = file.getBytes();
+            String serverHash = SecureUtil.sha256(new ByteArrayInputStream(bytes));
+            if (chunkHash != null && !chunkHash.isEmpty() && !serverHash.equalsIgnoreCase(chunkHash)) {
+                log.warn("分片哈希不匹配: uploadId={}, chunkIndex={}, client={}, server={}",
+                        uploadId, chunkIndex, chunkHash, serverHash);
+                return Response.error("分片校验失败，请重试");
+            }
             storageService.put(storagePath, bytes);
             KbUploadChunk chunk = new KbUploadChunk()
                     .setUploadId(uploadId)
                     .setChunkIndex(chunkIndex)
                     .setChunkSize((long) bytes.length)
-                    .setChunkHash(SecureUtil.sha256(new ByteArrayInputStream(bytes)))
+                    .setChunkHash(serverHash)
                     .setStoragePath(storagePath);
             chunkMapper.insert(chunk);
 
@@ -149,10 +183,7 @@ public class FileUploadService {
                 sessionMapper.updateById(session);
             }
 
-            List<Integer> uploaded = chunkMapper.selectList(
-                    new QueryWrapper<KbUploadChunk>().eq("upload_id", uploadId))
-                    .stream().map(KbUploadChunk::getChunkIndex).collect(Collectors.toList());
-            return Response.success(uploaded);
+            return Response.success(uploadId, Map.of("chunkIndex", chunkIndex));
         } catch (IOException e) {
             log.error("分片上传失败: uploadId={}, chunkIndex={}", uploadId, chunkIndex, e);
             return Response.error("分片上传失败");
@@ -244,45 +275,6 @@ public class FileUploadService {
             log.error("合并分片失败: uploadId={}", uploadId, e);
             try { storageService.delete(mergedKey); } catch (Exception ignored) {}
             return Response.error("合并分片失败");
-        }
-    }
-
-    /**
-     * 小文件直接上传（无需分片），存入 MinIO 并返回 uploadId 语义的 key。
-     */
-    public ResponseDTO uploadDirect(MultipartFile file, Integer staffId) {
-        if (file.getSize() > MAX_CHUNK_SIZE) {
-            return Response.error("文件超过10MB，请使用分片上传");
-        }
-        String uploadId = IdUtil.fastSimpleUUID();
-        String ext = file.getOriginalFilename() != null
-                ? file.getOriginalFilename().substring(file.getOriginalFilename().lastIndexOf('.') + 1)
-                : "bin";
-        String key = String.format("task-source/%d/%s/%s.%s",
-                staffId != null ? staffId : -1, uploadId, IdUtil.fastSimpleUUID().substring(2, 22), ext);
-        try {
-            storageService.put(key, file.getBytes());
-            // 插入一条虚拟 session 记录，口径统一：/import/task 通过 uploadId 查询
-            KbUploadSession session = new KbUploadSession()
-                    .setUploadId(uploadId)
-                    .setStaffId(staffId != null ? staffId : -1)
-                    .setFileName(file.getOriginalFilename())
-                    .setFileExt(ext)
-                    .setFileSize(file.getSize())
-                    .setFileHash("DIRECT")
-                    .setChunkSize(file.getSize())
-                    .setChunkCount(1)
-                    .setMergedObjectKey(key)
-                    .setStatus("COMPLETED")
-                    .setExpiresAt(LocalDateTime.now().plusHours(SESSION_TTL_HOURS));
-            sessionMapper.insert(session);
-            Map<String, Object> result = new HashMap<>();
-            result.put("uploadId", uploadId);
-            result.put("mergedKey", key);
-            return Response.success(result);
-        } catch (IOException e) {
-            log.error("Direct upload failed: {}", file.getOriginalFilename(), e);
-            return Response.error("上传失败");
         }
     }
 

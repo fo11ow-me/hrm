@@ -5,7 +5,6 @@ import com.alibaba.excel.annotation.ExcelIgnore;
 import com.alibaba.excel.annotation.ExcelProperty;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.qiujie.enums.BaseEnum;
-import org.apache.poi.ss.formula.functions.T;
 
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.BufferedInputStream;
@@ -143,7 +142,7 @@ public class EasyExcelUtil {
         try {
             Object value = field.get(item);
             if (value instanceof BaseEnum) {
-                return ((BaseEnum<T>) value).getMessage();
+                return ((BaseEnum<?>) value).getMessage();
             }
             if (value instanceof Enum) {
                 return ((Enum<?>) value).name();

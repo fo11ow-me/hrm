@@ -141,8 +141,9 @@ public class DocsController {
     public ResponseDTO uploadChunk(
             @RequestParam("uploadId") String uploadId,
             @RequestParam("chunkIndex") Integer chunkIndex,
+            @RequestParam(value = "chunkHash", required = false) String chunkHash,
             @RequestParam("file") MultipartFile file) {
-        return fileUploadService.uploadChunk(uploadId, chunkIndex, file);
+        return fileUploadService.uploadChunk(uploadId, chunkIndex, chunkHash, file);
     }
 
     @Operation(summary = "分片上传-完成")
