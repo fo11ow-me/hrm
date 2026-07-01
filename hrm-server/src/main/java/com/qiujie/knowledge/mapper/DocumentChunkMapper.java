@@ -12,6 +12,8 @@ import java.util.List;
 /**
  * 文档切片数据访问 — PostgreSQL (kb 数据源)。
  * 不使用 MyBatis-Plus（避免路由到 MySQL master），直接用 JdbcTemplate。
+ *
+ * @author quuj
  */
 @Component
 public class DocumentChunkMapper {
@@ -27,24 +29,36 @@ public class DocumentChunkMapper {
             .setDocumentId(rs.getLong("document_id"))
             .setChunkIndex(rs.getInt("chunk_index"))
             .setChunkText(rs.getString("chunk_text"))
-            .setTokenCount(rs.getInt("token_count"));
+            .setTokenCount(rs.getInt("token_count"))
+            .setChunkSummary(rs.getString("chunk_summary"))
+            .setCharStart(rs.getInt("char_start"))
+            .setCharEnd(rs.getInt("char_end"))
+            .setMetadataJson(rs.getString("metadata_json"));
 
     public DocumentChunk insert(DocumentChunk chunk) {
         jdbc.update(
-                "INSERT INTO document_chunk (document_id, chunk_index, chunk_text, token_count) VALUES (?, ?, ?, ?)",
-                chunk.getDocumentId(), chunk.getChunkIndex(), chunk.getChunkText(), chunk.getTokenCount());
-        Long id = jdbc.queryForObject("SELECT currval(pg_get_serial_sequence('document_chunk', 'id'))", Long.class);
+                "INSERT INTO document_chunk (document_id, chunk_index, chunk_text, "
+                + "token_count, chunk_summary, char_start, char_end, metadata_json) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb)",
+                chunk.getDocumentId(), chunk.getChunkIndex(), chunk.getChunkText(),
+                chunk.getTokenCount(), chunk.getChunkSummary(), chunk.getCharStart(),
+                chunk.getCharEnd(), chunk.getMetadataJson());
+        Long id = jdbc.queryForObject(
+                "SELECT currval(pg_get_serial_sequence('document_chunk', 'id'))", Long.class);
         chunk.setId(id);
         return chunk;
     }
 
     public int deleteByDocumentId(Long documentId) {
+        jdbc.update("DELETE FROM vector_store WHERE metadata::jsonb ->> 'documentId' = ?", String.valueOf(documentId));
         return jdbc.update("DELETE FROM document_chunk WHERE document_id = ?", documentId);
     }
 
     public List<DocumentChunk> selectByDocumentIdOrderByChunkIndex(Long documentId) {
         return jdbc.query(
-                "SELECT id, document_id, chunk_index, chunk_text, token_count FROM document_chunk WHERE document_id = ? ORDER BY chunk_index",
+                "SELECT id, document_id, chunk_index, chunk_text, token_count, "
+                + "chunk_summary, char_start, char_end, metadata_json, create_time "
+                + "FROM document_chunk WHERE document_id = ? ORDER BY chunk_index",
                 ROW_MAPPER, documentId);
     }
 }

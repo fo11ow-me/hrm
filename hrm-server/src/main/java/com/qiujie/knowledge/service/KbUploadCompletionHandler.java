@@ -12,6 +12,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,11 +36,10 @@ public class KbUploadCompletionHandler implements UploadCompletionHandler {
 
     @Override
     public Map<String, Object> checkDedup(String fileHash) {
+        // 只要文件未被删除且非失败状态，即视为已存在，避免重复上传
         List<KnowledgeDocument> existing = documentMapper.selectList(
                 new QueryWrapper<KnowledgeDocument>()
-                        .eq("file_hash", fileHash)
-                        .eq("status", "READY")
-                        .eq("is_deleted", 0));
+                        .eq("file_hash", fileHash));
         if (existing.isEmpty()) return null;
         KnowledgeDocument doc = existing.get(0);
         Map<String, Object> result = new HashMap<>();
@@ -57,8 +57,9 @@ public class KbUploadCompletionHandler implements UploadCompletionHandler {
                 .setType(session.getFileExt())
                 .setFileHash(session.getFileHash())
                 .setFileSize(session.getFileSize())
-                .setStatus(DocumentStatusEnum.PROCESSING.name())
-                .setStaffId(session.getStaffId());
+                .setStatus(DocumentStatusEnum.UPLOADED.name())
+                .setStaffId(session.getStaffId())
+                .setUploadTime(LocalDateTime.now());
         documentMapper.insert(doc);
 
         eventPublisher.publishEvent(new DocumentIngestionEvent(doc.getId()));

@@ -26,7 +26,7 @@ public class HybridRetrievalService implements KnowledgeSearchProvider {
     private static final Logger log = LoggerFactory.getLogger(HybridRetrievalService.class);
 
     @Autowired
-    private OllamaEmbeddingClient ollamaEmbedding;
+    private DashScopeEmbeddingClient embeddingClient;
 
     private final JdbcTemplate kbJdbc;
 
@@ -64,7 +64,7 @@ public class HybridRetrievalService implements KnowledgeSearchProvider {
 
     private List<SearchResult> vectorSearch(String query) {
         try {
-            float[] vec = ollamaEmbedding.embed(List.of(query)).get(0);
+            float[] vec = embeddingClient.embed(List.of(query)).get(0);
             com.pgvector.PGvector pgVec = new com.pgvector.PGvector(vec);
             String sql = "SELECT content, metadata, 1 - (embedding <=> ?) AS similarity FROM vector_store ORDER BY embedding <=> ? LIMIT ?";
             return kbJdbc.query(sql, rs -> {
@@ -99,7 +99,7 @@ public class HybridRetrievalService implements KnowledgeSearchProvider {
                     SELECT c.chunk_text, d.old_name, d.id, c.id
                     FROM document_chunk c
                     JOIN kb_document d ON d.id = c.document_id
-                    WHERE c.chunk_text ILIKE ? AND d.is_deleted = 0 AND d.status = 'READY'
+                    WHERE c.chunk_text ILIKE ? AND d.status = 'READY'
                     ORDER BY length(c.chunk_text) ASC
                     LIMIT ?
                     """;

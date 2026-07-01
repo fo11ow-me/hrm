@@ -41,7 +41,7 @@ public class KnowledgeService {
         com.baomidou.mybatisplus.core.metadata.IPage<KnowledgeDocument> page =
                 new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(current, size);
         QueryWrapper<KnowledgeDocument> wrapper = new QueryWrapper<>();
-        wrapper.orderByDesc("created_at");
+        wrapper.orderByDesc("create_time");
         if (oldName != null && !oldName.isBlank()) {
             wrapper.like("old_name", oldName);
         }

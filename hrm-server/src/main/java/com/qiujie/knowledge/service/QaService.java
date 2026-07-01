@@ -224,9 +224,15 @@ public class QaService {
                                List<QaResponse.CitationVO> citations) {
         if (kbJdbc == null) return;
         try {
+            Integer staffId = securityUtil.getCurrentOperatorId();
+            int citationCount = citations != null ? citations.size() : 0;
+            boolean answered = answer != null && !answer.startsWith("抱歉");
+
             kbJdbc.update(
-                    "INSERT INTO kb_qa_record (question, answer, staff_id, evidence_level) VALUES (?, ?, ?, ?)",
-                    question, answer, securityUtil.getCurrentOperatorId(), evidenceLevel);
+                    "INSERT INTO kb_qa_record (question, answer, staff_id, evidence_level,"
+                    + " answered, citation_count, endpoint, success) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    question, answer, staffId, evidenceLevel,
+                    answered, citationCount, "qa/ask", true);
         } catch (Exception e) {
             log.warn("Failed to save QA record", e);
         }

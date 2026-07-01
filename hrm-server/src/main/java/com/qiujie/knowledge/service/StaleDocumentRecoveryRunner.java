@@ -27,7 +27,7 @@ public class StaleDocumentRecoveryRunner implements ApplicationRunner {
         int count = documentMapper.markStaleProcessingAsFailed(
                 "文档处理因服务中断未完成，请重试");
         if (count > 0) {
-            log.info("Recovered {} stale PROCESSING documents → FAILED", count);
+            log.info("Recovered {} stale UPLOADED/PROCESSING documents → FAILED", count);
         }
     }
 }

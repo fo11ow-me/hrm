@@ -30,6 +30,7 @@ public class ChunkService {
         String[] paragraphs = text.split("\\n\\s*\\n");
         StringBuilder current = new StringBuilder();
         int index = 0;
+        int currentCharStart = 0;
         String overlapText = "";
 
         for (String para : paragraphs) {
@@ -37,9 +38,10 @@ public class ChunkService {
             if (trimmed.isEmpty()) continue;
 
             if (current.length() + trimmed.length() > maxSize && current.length() > 0) {
-                chunks.add(buildChunk(current.toString(), index++));
+                chunks.add(buildChunk(current.toString(), currentCharStart, index++));
                 // overlap: 保留上一块的结尾部分
                 overlapText = current.substring(Math.max(0, current.length() - overlap));
+                currentCharStart += current.length() - overlapText.length();
                 current = new StringBuilder(overlapText + trimmed + "\n\n");
             } else {
                 current.append(trimmed).append("\n\n");
@@ -48,28 +50,35 @@ public class ChunkService {
 
         // 最后一个切片
         if (current.length() > 0) {
-            chunks.add(buildChunk(current.toString(), index));
+            chunks.add(buildChunk(current.toString(), currentCharStart, index));
         }
 
         return chunks;
     }
 
-    private ChunkResult buildChunk(String text, int index) {
+    private ChunkResult buildChunk(String text, int charStart, int index) {
+        String trimmed = text.trim();
         // 估算 token 数：中文约1.5字符/token，英文约4字符/token
-        int tokenCount = (int) (text.length() / 2.5);
-        return new ChunkResult(text.trim(), tokenCount);
+        int tokenCount = (int) (trimmed.length() / 2.5);
+        return new ChunkResult(trimmed, tokenCount, charStart, charStart + trimmed.length());
     }
 
     public static class ChunkResult {
         private final String text;
         private final int tokenCount;
+        private final int charStart;
+        private final int charEnd;
 
-        public ChunkResult(String text, int tokenCount) {
+        public ChunkResult(String text, int tokenCount, int charStart, int charEnd) {
             this.text = text;
             this.tokenCount = tokenCount;
+            this.charStart = charStart;
+            this.charEnd = charEnd;
         }
 
         public String getText() { return text; }
         public int getTokenCount() { return tokenCount; }
+        public int getCharStart() { return charStart; }
+        public int getCharEnd() { return charEnd; }
     }
 }

@@ -12,6 +12,8 @@ import java.time.LocalDateTime;
 
 /**
  * 上传会话实体 (MySQL)
+ *
+ * @author quuj
  */
 @Data
 @Accessors(chain = true)
@@ -44,6 +46,7 @@ public class KbUploadSession implements Serializable {
     @TableField("chunk_count")
     private Integer chunkCount;
 
+    /** INIT / UPLOADING / COMPLETING / COMPLETED / EXPIRED */
     @TableField("status")
     private String status;
 
@@ -56,9 +59,9 @@ public class KbUploadSession implements Serializable {
     @TableField("expires_at")
     private LocalDateTime expiresAt;
 
-    @TableField("created_at")
-    private LocalDateTime createdAt;
+    @TableField("create_time")
+    private LocalDateTime createTime;
 
-    @TableField("updated_at")
-    private LocalDateTime updatedAt;
+    @TableField("update_time")
+    private LocalDateTime updateTime;
 }

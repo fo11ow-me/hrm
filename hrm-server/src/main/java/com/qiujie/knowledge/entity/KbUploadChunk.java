@@ -9,6 +9,8 @@ import java.time.LocalDateTime;
 
 /**
  * 上传分片记录实体 (MySQL)
+ *
+ * @author quuj
  */
 @Data
 @Accessors(chain = true)
@@ -38,6 +40,6 @@ public class KbUploadChunk implements Serializable {
     @TableField("storage_path")
     private String storagePath;
 
-    @TableField("uploaded_at")
-    private LocalDateTime uploadedAt;
+    @TableField("upload_time")
+    private LocalDateTime uploadTime;
 }

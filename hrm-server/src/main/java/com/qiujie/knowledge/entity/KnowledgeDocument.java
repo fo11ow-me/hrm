@@ -9,6 +9,8 @@ import java.time.LocalDateTime;
 
 /**
  * 知识库文档实体 (MySQL)
+ *
+ * @author quuj
  */
 @Data
 @Accessors(chain = true)
@@ -35,17 +37,23 @@ public class KnowledgeDocument implements Serializable {
     @TableField("file_size")
     private Long fileSize;
 
-    @TableField("stored_size")
-    private Long storedSize;
-
-    @TableField("compressed")
-    private Integer compressed;
-
     @TableField("status")
     private String status;
 
     @TableField("failure_reason")
     private String failureReason;
+
+    /** 文档预览文本 */
+    @TableField("preview_text")
+    private String previewText;
+
+    /** 上传完成时间 */
+    @TableField("upload_time")
+    private LocalDateTime uploadTime;
+
+    /** 处理完成时间 */
+    @TableField("process_time")
+    private LocalDateTime processTime;
 
     @TableField("chunk_count")
     private Integer chunkCount;
@@ -53,13 +61,12 @@ public class KnowledgeDocument implements Serializable {
     @TableField("staff_id")
     private Integer staffId;
 
-    @TableField("created_at")
-    private LocalDateTime createdAt;
+    @TableField("create_time")
+    private LocalDateTime createTime;
 
-    @TableField("updated_at")
-    private LocalDateTime updatedAt;
+    @TableField("update_time")
+    private LocalDateTime updateTime;
 
     @TableField("is_deleted")
-    @TableLogic
     private Integer isDeleted;
 }
