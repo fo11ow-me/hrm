@@ -69,7 +69,7 @@ public class AgentService {
         AgentMessage userMsg = new AgentMessage()
                 .setSessionId(session.getId()).setRole("USER")
                 .setContent(request.getMessage())
-                .setCreatedAt(LocalDateTime.now());
+                .setCreateTime(LocalDateTime.now());
         messageMapper.insert(userMsg);
 
         // 组装 L1/L2 记忆上下文注入 system prompt
@@ -130,7 +130,7 @@ public class AgentService {
                 AgentMessage assistantMsg = new AgentMessage()
                         .setSessionId(sessionId).setRole("ASSISTANT")
                         .setContent(finalAnswer)
-                        .setCreatedAt(LocalDateTime.now());
+                        .setCreateTime(LocalDateTime.now());
                 messageMapper.insert(assistantMsg);
 
                 AgentSession s = sessionMapper.selectById(sessionId);
@@ -182,7 +182,7 @@ public class AgentService {
                         : "新会话")
                 .setMode(request.getMode() != null ? request.getMode() : "CHAT")
                 .setMessageCount(0).setTotalTokens(0L)
-                .setCreatedAt(LocalDateTime.now()).setUpdatedAt(LocalDateTime.now());
+                .setCreateTime(LocalDateTime.now()).setUpdateTime(LocalDateTime.now());
         sessionMapper.insert(session);
         // 初始化上下文行，供记忆服务使用
         AssistantSessionContext ctx = new AssistantSessionContext();
@@ -198,7 +198,7 @@ public class AgentService {
         Integer staffId = securityUtil.getCurrentOperatorId();
         return sessionMapper.selectList(
                 new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<AgentSession>()
-                        .eq("staff_id", staffId).orderByDesc("updated_at"));
+                        .eq("staff_id", staffId).orderByDesc("update_time"));
     }
 
     /** 获取单个会话详情 */

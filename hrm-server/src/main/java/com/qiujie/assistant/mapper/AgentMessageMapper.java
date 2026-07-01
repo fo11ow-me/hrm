@@ -8,6 +8,6 @@ import org.apache.ibatis.annotations.Mapper;
 @Mapper
 public interface AgentMessageMapper extends BaseMapper<AgentMessage> {
 
-    @Delete("DELETE FROM agent_message WHERE session_id = #{sessionId}")
+    @Delete("DELETE FROM assistant_message WHERE session_id = #{sessionId}")
     int deleteBySessionId(Long sessionId);
 }

@@ -154,7 +154,7 @@ public class AssistantMemoryService {
 
         session.setMessageCount(session.getMessageCount() != null
                 ? session.getMessageCount() + 2 : 2);
-        session.setUpdatedAt(LocalDateTime.now());
+        session.setUpdateTime(LocalDateTime.now());
         sessionMapper.updateById(session);
     }
 

@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
-@TableName("agent_session")
+@TableName("assistant_session")
 public class AgentSession implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -30,13 +30,11 @@ public class AgentSession implements Serializable {
     @TableField("mode")
     private String mode;
 
-    /** L1 会话记忆：LLM 增量摘要 */
-    @TableField("session_memory")
-    private String sessionMemory;
+    @TableField("status")
+    private String status;
 
-    /** L2 紧凑摘要：精炼的历史压缩 */
-    @TableField("compact_summary")
-    private String compactSummary;
+    @TableField("last_message_at")
+    private LocalDateTime lastMessageAt;
 
     @TableField("message_count")
     private Integer messageCount;
@@ -44,9 +42,9 @@ public class AgentSession implements Serializable {
     @TableField("total_tokens")
     private Long totalTokens;
 
-    @TableField("created_at")
-    private LocalDateTime createdAt;
+    @TableField("create_time")
+    private LocalDateTime createTime;
 
-    @TableField("updated_at")
-    private LocalDateTime updatedAt;
+    @TableField("update_time")
+    private LocalDateTime updateTime;
 }

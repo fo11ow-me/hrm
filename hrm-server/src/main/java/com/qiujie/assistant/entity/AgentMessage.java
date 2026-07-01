@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
-@TableName("agent_message")
+@TableName("assistant_message")
 public class AgentMessage implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -27,16 +27,15 @@ public class AgentMessage implements Serializable {
     @TableField("role")
     private String role;
 
+    @TableField("tool_mode")
+    private String toolMode;
+
     @TableField("content")
     private String content;
 
-    /** 工具名称（仅 tool role） */
-    @TableField("tool_name")
-    private String toolName;
+    @TableField("structured_payload")
+    private String structuredPayload;
 
-    @TableField("token_count")
-    private Integer tokenCount;
-
-    @TableField("created_at")
-    private LocalDateTime createdAt;
+    @TableField("create_time")
+    private LocalDateTime createTime;
 }
