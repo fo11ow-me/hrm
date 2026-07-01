@@ -214,26 +214,20 @@ public class ChatService {
     }
 
     /**
-     * 获取会话消息历史——复合游标分页。
-     * 利用联合索引 idx_msg_session(session_id, create_time)，默认最近 5 条。
-     *
-     * @param beforeTime 上一页首条消息的 create_time
-     * @param beforeId   上一页首条消息的 id（防止同时刻重复）
+     * 获取会话消息历史——游标分页。
+     * 利用降序索引 idx_msg_session(session_id ASC, create_time DESC)，默认最近 5 条。
+     * 索引物理降序，ORDER BY 仅作语义声明，实际不排序。
      */
-    public Map<String, Object> listMessages(Long sessionId, String beforeTime, Long beforeId, int size) {
+    public Map<String, Object> listMessages(Long sessionId, String before, int size) {
         int limit = Math.min(size, 50);
         var qw = new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<ChatMessage>()
                 .eq("session_id", sessionId);
 
-        // 复合游标：(create_time, id) < (beforeTime, beforeId)——走联合索引
-        if (beforeTime != null && beforeId != null) {
-            qw.and(w -> w
-                .lt("create_time", beforeTime)
-                .or(i -> i.eq("create_time", beforeTime).lt("id", beforeId)));
+        if (before != null) {
+            qw.lt("create_time", before); // 索引降序，游标之前 = 更早的消息
         }
 
-        // ORDER BY 与索引顺序一致，避免 filesort
-        qw.orderByDesc("create_time").orderByDesc("id").last("LIMIT " + (limit + 1));
+        qw.orderByDesc("create_time").last("LIMIT " + (limit + 1));
 
         List<ChatMessage> desc = messageMapper.selectList(qw);
         boolean hasMore = desc.size() > limit;
@@ -241,13 +235,10 @@ public class ChatService {
 
         java.util.Collections.reverse(desc); // 恢复升序
 
-        Map<String, Object> nextCursor = null;
+        String nextCursor = null;
         if (!desc.isEmpty()) {
-            ChatMessage first = desc.get(0);
-            nextCursor = new HashMap<>();
-            nextCursor.put("time", first.getCreateTime() != null
-                    ? first.getCreateTime().toString() : null);
-            nextCursor.put("id", first.getId());
+            nextCursor = desc.get(0).getCreateTime() != null
+                    ? desc.get(0).getCreateTime().toString() : null;
         }
 
         Map<String, Object> result = new HashMap<>();

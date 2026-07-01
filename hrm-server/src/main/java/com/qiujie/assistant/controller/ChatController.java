@@ -98,9 +98,8 @@ public class ChatController {
     @GetMapping("/conversations/{id}/messages")
     public ResponseDTO listMessages(@PathVariable Long id,
             @RequestParam(defaultValue = "5") int size,
-            @RequestParam(required = false) String beforeTime,
-            @RequestParam(required = false) Long beforeId) {
-        return Response.success(chatService.listMessages(id, beforeTime, beforeId, size));
+            @RequestParam(required = false) String before) {
+        return Response.success(chatService.listMessages(id, before, size));
     }
 
     /**

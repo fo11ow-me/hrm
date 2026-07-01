@@ -212,11 +212,9 @@ export default {
       if (!this.hasMore || this.loadingMore) return
       this.loadingMore = true
       const prevHeight = this.$refs.messagesPane.scrollHeight
-      const cursor = this.nextCursor || {}
       queryMessages(this.conversationId, {
         size: 5,
-        beforeTime: cursor.time,
-        beforeId: cursor.id
+        before: this.nextCursor
       }).then(response => {
         if (response.code === 200) {
           const data = response.data || {}
