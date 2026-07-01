@@ -8,14 +8,12 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
- * AI 助手会话实体 (MySQL)
- *
- * @author quuj
+ * Agent 会话实体 (MySQL)
  */
 @Data
 @Accessors(chain = true)
 @TableName("assistant_session")
-public class AssistantSession implements Serializable {
+public class AgentSession implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
@@ -32,7 +30,6 @@ public class AssistantSession implements Serializable {
     @TableField("mode")
     private String mode;
 
-    /** ACTIVE / ARCHIVED / DELETED */
     @TableField("status")
     private String status;
 

@@ -5,9 +5,9 @@ import com.qiujie.assistant.entity.AssistantSessionContext;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
- * AI 助手会话上下文 Mapper
+ * 会话摘要上下文 Mapper
  *
- * @author quuj
+ * @author qiujie
  */
 @Mapper
 public interface AssistantSessionContextMapper extends BaseMapper<AssistantSessionContext> {

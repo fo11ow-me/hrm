@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 
 /**
  * AI 助手会话上下文实体 (MySQL)
+ * 存储 L1 会话记忆、L2 紧凑摘要、前端展示摘要及压缩范围追踪
  *
  * @author quuj
  */
@@ -28,21 +29,27 @@ public class AssistantSessionContext implements Serializable {
     @TableField("compact_summary")
     private String compactSummary;
 
+    /** L1 覆盖的起始消息ID */
     @TableField("session_memory_base_message_id")
     private Long sessionMemoryBaseMessageId;
 
+    /** L1 覆盖的结束消息ID */
     @TableField("session_memory_range_end_message_id")
     private Long sessionMemoryRangeEndMessageId;
 
+    /** L2 覆盖的起始消息ID */
     @TableField("compact_summary_base_message_id")
     private Long compactSummaryBaseMessageId;
 
+    /** L2 覆盖的结束消息ID */
     @TableField("compact_summary_range_end_message_id")
     private Long compactSummaryRangeEndMessageId;
 
+    /** 前端展示用非LLM会话摘要 */
     @TableField("summary_text")
     private String summaryText;
 
+    /** summary_text 覆盖的结束消息ID */
     @TableField("source_message_id")
     private Long sourceMessageId;
 
