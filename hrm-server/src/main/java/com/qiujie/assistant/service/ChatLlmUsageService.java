@@ -1,7 +1,7 @@
 package com.qiujie.assistant.service;
 
-import com.qiujie.assistant.entity.AssistantLlmUsage;
-import com.qiujie.assistant.mapper.AssistantLlmUsageMapper;
+import com.qiujie.assistant.entity.ChatLlmUsage;
+import com.qiujie.assistant.mapper.ChatLlmUsageMapper;
 import com.qiujie.util.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,12 +17,12 @@ import java.time.LocalDateTime;
  * @author quuj
  */
 @Service
-public class AssistantLlmUsageService {
+public class ChatLlmUsageService {
 
-    private static final Logger log = LoggerFactory.getLogger(AssistantLlmUsageService.class);
+    private static final Logger log = LoggerFactory.getLogger(ChatLlmUsageService.class);
 
     @Autowired
-    private AssistantLlmUsageMapper usageMapper;
+    private ChatLlmUsageMapper usageMapper;
 
     @Autowired
     private SecurityUtil securityUtil;
@@ -34,7 +34,7 @@ public class AssistantLlmUsageService {
                         int promptTokens, int completionTokens, boolean isEstimated,
                         long latencyMs, boolean success, String errorMessage, String modelName) {
         try {
-            AssistantLlmUsage usage = new AssistantLlmUsage();
+            ChatLlmUsage usage = new ChatLlmUsage();
             usage.setStaffId(securityUtil.getCurrentOperatorId());
             usage.setModule(module);
             usage.setEndpoint(endpoint);

@@ -12,8 +12,8 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
-@TableName("assistant_message")
-public class AgentMessage implements Serializable {
+@TableName("ast_chat_message")
+public class ChatMessage implements Serializable {
 
     private static final long serialVersionUID = 1L;
 

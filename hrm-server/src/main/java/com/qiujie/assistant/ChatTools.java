@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
  * 权限校验由 Controller 层的 @PreAuthorize 和 Service 逻辑保障，Tool 本身不做鉴权。
  */
 @Component
-public class AssistantTools {
+public class ChatTools {
 
     @Autowired private StaffLeaveController leaveCtrl;
     @Autowired private AttendanceController attCtrl;

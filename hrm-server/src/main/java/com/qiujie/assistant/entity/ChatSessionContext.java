@@ -13,8 +13,8 @@ import java.time.LocalDateTime;
  * @author quuj
  */
 @Data
-@TableName("assistant_session_context")
-public class AssistantSessionContext implements Serializable {
+@TableName("ast_chat_session_context")
+public class ChatSessionContext implements Serializable {
 
     private static final long serialVersionUID = 1L;
 

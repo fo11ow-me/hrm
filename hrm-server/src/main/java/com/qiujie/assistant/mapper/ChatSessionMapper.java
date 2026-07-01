@@ -1,14 +1,14 @@
 package com.qiujie.assistant.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.qiujie.assistant.entity.AssistantLlmUsage;
+import com.qiujie.assistant.entity.ChatSession;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
- * LLM 调用统计 Mapper
+ * AI 助手会话 Mapper
  *
  * @author quuj
  */
 @Mapper
-public interface AssistantLlmUsageMapper extends BaseMapper<AssistantLlmUsage> {
+public interface ChatSessionMapper extends BaseMapper<ChatSession> {
 }

@@ -3,7 +3,7 @@ package com.qiujie.assistant.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Set;
 
-public class AgentChatRequest {
+public class ChatRequest {
 
     private Long sessionId;
     private String message;

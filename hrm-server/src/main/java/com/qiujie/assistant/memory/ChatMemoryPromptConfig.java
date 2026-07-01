@@ -12,7 +12,7 @@ import org.springframework.core.io.ClassPathResource;
  * @author qiujie
  */
 @Configuration
-public class AssistantMemoryPromptConfig {
+public class ChatMemoryPromptConfig {
 
     @Bean
     @Qualifier("assistantSessionMemoryPromptTemplate")

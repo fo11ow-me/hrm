@@ -1,6 +1,6 @@
 package com.qiujie.assistant.memory;
 
-import com.qiujie.assistant.entity.AgentMessage;
+import com.qiujie.assistant.entity.ChatMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -23,9 +23,9 @@ import java.util.Map;
  * @author qiujie
  */
 @Component
-public class AssistantMemorySummarizer {
+public class ChatMemorySummarizer {
 
-    private static final Logger log = LoggerFactory.getLogger(AssistantMemorySummarizer.class);
+    private static final Logger log = LoggerFactory.getLogger(ChatMemorySummarizer.class);
 
     private final ChatClient chatClient;
     private final PromptTemplate sessionMemoryPromptTemplate;
@@ -40,7 +40,7 @@ public class AssistantMemorySummarizer {
      * @param compactSummaryPromptTemplate L2 紧凑摘要模板
      * @param runtimeCompactPromptTemplate L3 运行时上下文压缩模板
      */
-    public AssistantMemorySummarizer(
+    public ChatMemorySummarizer(
             ChatClient.Builder chatClientBuilder,
             @Qualifier("assistantSessionMemoryPromptTemplate") PromptTemplate sessionMemoryPromptTemplate,
             @Qualifier("assistantCompactSummaryPromptTemplate") PromptTemplate compactSummaryPromptTemplate,
@@ -61,7 +61,7 @@ public class AssistantMemorySummarizer {
      * @return 新的会话记忆摘要
      */
     public String summarizeSessionMemory(
-            String existingSessionMemory, List<AgentMessage> newMessages, String toolMode, Long groupId) {
+            String existingSessionMemory, List<ChatMessage> newMessages, String toolMode, Long groupId) {
         return callForText(sessionMemoryPromptTemplate.create(Map.of(
                 "existingSessionMemory", defaultText(existingSessionMemory),
                 "newMessages", formatMessages(newMessages),
@@ -79,7 +79,7 @@ public class AssistantMemorySummarizer {
      * @return 新的紧凑摘要
      */
     public String summarizeCompactSummary(
-            String existingCompactSummary, String sessionMemory, List<AgentMessage> messagesToCompact) {
+            String existingCompactSummary, String sessionMemory, List<ChatMessage> messagesToCompact) {
         return callForText(compactSummaryPromptTemplate.create(Map.of(
                 "existingCompactSummary", defaultText(existingCompactSummary),
                 "sessionMemory", defaultText(sessionMemory),
@@ -112,12 +112,12 @@ public class AssistantMemorySummarizer {
      * @param messages 消息列表
      * @return 格式化文本，无消息时返回 "NONE"
      */
-    String formatMessages(List<AgentMessage> messages) {
+    String formatMessages(List<ChatMessage> messages) {
         if (messages == null || messages.isEmpty()) {
             return "NONE";
         }
         StringBuilder sb = new StringBuilder();
-        for (AgentMessage m : messages) {
+        for (ChatMessage m : messages) {
             if (m == null || m.getContent() == null || m.getContent().isBlank()) {
                 continue;
             }

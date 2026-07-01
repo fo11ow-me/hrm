@@ -2,14 +2,14 @@ package com.qiujie.assistant.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.qiujie.assistant.entity.AgentMessage;
-import com.qiujie.assistant.entity.AgentSession;
-import com.qiujie.assistant.entity.AssistantSessionContext;
-import com.qiujie.assistant.mapper.AgentMessageMapper;
-import com.qiujie.assistant.mapper.AgentSessionMapper;
-import com.qiujie.assistant.mapper.AssistantSessionContextMapper;
-import com.qiujie.assistant.memory.AssistantMemoryProperties;
-import com.qiujie.assistant.memory.AssistantMemorySummarizer;
+import com.qiujie.assistant.entity.ChatMessage;
+import com.qiujie.assistant.entity.ChatSession;
+import com.qiujie.assistant.entity.ChatSessionContext;
+import com.qiujie.assistant.mapper.ChatMessageMapper;
+import com.qiujie.assistant.mapper.ChatSessionMapper;
+import com.qiujie.assistant.mapper.ChatSessionContextMapper;
+import com.qiujie.assistant.memory.ChatMemoryProperties;
+import com.qiujie.assistant.memory.ChatMemorySummarizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -28,22 +28,22 @@ import java.util.stream.Collectors;
  * @author quuj
  */
 @Service
-public class AssistantMemoryService {
+public class ChatMemoryService {
 
-    private static final Logger log = LoggerFactory.getLogger(AssistantMemoryService.class);
+    private static final Logger log = LoggerFactory.getLogger(ChatMemoryService.class);
     private static final int TOKEN_DIVISOR = 4;
 
-    private final AgentSessionMapper sessionMapper;
-    private final AgentMessageMapper messageMapper;
-    private final AssistantSessionContextMapper contextMapper;
-    private final AssistantMemorySummarizer summarizer;
-    private final AssistantMemoryProperties props;
+    private final ChatSessionMapper sessionMapper;
+    private final ChatMessageMapper messageMapper;
+    private final ChatSessionContextMapper contextMapper;
+    private final ChatMemorySummarizer summarizer;
+    private final ChatMemoryProperties props;
 
-    public AssistantMemoryService(AgentSessionMapper sessionMapper,
-            AgentMessageMapper messageMapper,
-            AssistantSessionContextMapper contextMapper,
-            AssistantMemorySummarizer summarizer,
-            AssistantMemoryProperties props) {
+    public ChatMemoryService(ChatSessionMapper sessionMapper,
+            ChatMessageMapper messageMapper,
+            ChatSessionContextMapper contextMapper,
+            ChatMemorySummarizer summarizer,
+            ChatMemoryProperties props) {
         this.sessionMapper = sessionMapper;
         this.messageMapper = messageMapper;
         this.contextMapper = contextMapper;
@@ -57,8 +57,8 @@ public class AssistantMemoryService {
      * @param session 当前会话
      * @return 系统提示上下文文本
      */
-    public String buildContext(AgentSession session) {
-        AssistantSessionContext ctx = contextMapper.selectById(session.getId());
+    public String buildContext(ChatSession session) {
+        ChatSessionContext ctx = contextMapper.selectById(session.getId());
         if (ctx == null) {
             return "";
         }
@@ -73,30 +73,30 @@ public class AssistantMemoryService {
     }
 
     /**
-     * 消息发送后的记忆更新入口。由 AgentService 在 LLM 调用完成后调用。
+     * 消息发送后的记忆更新入口。由 ChatService 在 LLM 调用完成后调用。
      *
      * @param session           当前会话
      * @param toolMode          当前工具模式
      * @param groupId           当前分组 ID（可能为 null）
      * @param currentMessageId  当前轮次最后一条消息 ID
      */
-    public void afterMessage(AgentSession session, String toolMode, Long groupId, Long currentMessageId) {
+    public void afterMessage(ChatSession session, String toolMode, Long groupId, Long currentMessageId) {
         maintain(session, toolMode, groupId, currentMessageId);
     }
 
-    private void maintain(AgentSession session, String toolMode, Long groupId, Long currentMessageId) {
-        List<AgentMessage> allMessages = messageMapper.selectList(
-                new QueryWrapper<AgentMessage>()
+    private void maintain(ChatSession session, String toolMode, Long groupId, Long currentMessageId) {
+        List<ChatMessage> allMessages = messageMapper.selectList(
+                new QueryWrapper<ChatMessage>()
                         .eq("session_id", session.getId()).orderByAsc("id"));
         if (allMessages.isEmpty()) {
             return;
         }
 
-        AssistantSessionContext ctx = contextMapper.selectById(session.getId());
+        ChatSessionContext ctx = contextMapper.selectById(session.getId());
         long lastRangeEnd = ctx != null && ctx.getSessionMemoryRangeEndMessageId() != null
                 ? ctx.getSessionMemoryRangeEndMessageId() : 0L;
 
-        List<AgentMessage> newMessages = allMessages.stream()
+        List<ChatMessage> newMessages = allMessages.stream()
                 .filter(m -> m.getId() != null && m.getId() > lastRangeEnd)
                 .collect(Collectors.toList());
 
@@ -114,7 +114,7 @@ public class AssistantMemoryService {
             }
         }
 
-        AssistantSessionContext toWrite = ctx;
+        ChatSessionContext toWrite = ctx;
         toWrite.setSessionMemory(summarizer.summarizeSessionMemory(
                 ctx.getSessionMemory(), newMessages, toolMode, groupId));
         toWrite.setSessionMemoryBaseMessageId(newMessages.get(0).getId());
@@ -138,18 +138,18 @@ public class AssistantMemoryService {
 
         long writeVersion = expectedVersion;
         updateContext(session.getId(), writeVersion, w -> {
-            w.set(AssistantSessionContext::getSessionMemory, toWrite.getSessionMemory());
-            w.set(AssistantSessionContext::getSessionMemoryBaseMessageId,
+            w.set(ChatSessionContext::getSessionMemory, toWrite.getSessionMemory());
+            w.set(ChatSessionContext::getSessionMemoryBaseMessageId,
                     toWrite.getSessionMemoryBaseMessageId());
-            w.set(AssistantSessionContext::getSessionMemoryRangeEndMessageId,
+            w.set(ChatSessionContext::getSessionMemoryRangeEndMessageId,
                     toWrite.getSessionMemoryRangeEndMessageId());
-            w.set(AssistantSessionContext::getCompactSummary, toWrite.getCompactSummary());
-            w.set(AssistantSessionContext::getCompactSummaryBaseMessageId,
+            w.set(ChatSessionContext::getCompactSummary, toWrite.getCompactSummary());
+            w.set(ChatSessionContext::getCompactSummaryBaseMessageId,
                     toWrite.getCompactSummaryBaseMessageId());
-            w.set(AssistantSessionContext::getCompactSummaryRangeEndMessageId,
+            w.set(ChatSessionContext::getCompactSummaryRangeEndMessageId,
                     toWrite.getCompactSummaryRangeEndMessageId());
-            w.set(AssistantSessionContext::getContextVersion, toWrite.getContextVersion());
-            w.set(AssistantSessionContext::getUpdateTime, toWrite.getUpdateTime());
+            w.set(ChatSessionContext::getContextVersion, toWrite.getContextVersion());
+            w.set(ChatSessionContext::getUpdateTime, toWrite.getUpdateTime());
         });
 
         session.setMessageCount(session.getMessageCount() != null
@@ -158,7 +158,7 @@ public class AssistantMemoryService {
         sessionMapper.updateById(session);
     }
 
-    private boolean shouldUpdateSessionMemory(List<AgentMessage> newMessages) {
+    private boolean shouldUpdateSessionMemory(List<ChatMessage> newMessages) {
         if (newMessages.isEmpty()) {
             return false;
         }
@@ -179,28 +179,28 @@ public class AssistantMemoryService {
      * @param messages 消息列表
      * @return 估算的 token 数，至少 1
      */
-    int estimateTokens(List<AgentMessage> messages) {
+    int estimateTokens(List<ChatMessage> messages) {
         if (messages == null || messages.isEmpty()) {
             return 0;
         }
         int totalChars = messages.stream()
-                .map(AgentMessage::getContent)
+                .map(ChatMessage::getContent)
                 .filter(c -> c != null && !c.isBlank())
                 .mapToInt(String::length)
                 .sum();
         return Math.max(1, totalChars / TOKEN_DIVISOR);
     }
 
-    private List<AgentMessage> collectMessagesBefore(
-            List<AgentMessage> all, Long currentMessageId) {
+    private List<ChatMessage> collectMessagesBefore(
+            List<ChatMessage> all, Long currentMessageId) {
         return all.stream()
                 .filter(m -> currentMessageId == null || m.getId() == null
                         || m.getId() < currentMessageId)
                 .collect(Collectors.toList());
     }
 
-    private AssistantSessionContext newContext(Long sessionId) {
-        AssistantSessionContext ctx = new AssistantSessionContext();
+    private ChatSessionContext newContext(Long sessionId) {
+        ChatSessionContext ctx = new ChatSessionContext();
         ctx.setSessionId(sessionId);
         ctx.setContextVersion(0L);
         ctx.setUpdateTime(LocalDateTime.now());
@@ -215,17 +215,17 @@ public class AssistantMemoryService {
      * @param updater        更新器消费者
      */
     private void updateContext(Long sessionId, long expectedVersion,
-            Consumer<LambdaUpdateWrapper<AssistantSessionContext>> updater) {
+            Consumer<LambdaUpdateWrapper<ChatSessionContext>> updater) {
         for (int i = 0; i < 3; i++) {
-            LambdaUpdateWrapper<AssistantSessionContext> wrapper = new LambdaUpdateWrapper<>();
-            wrapper.eq(AssistantSessionContext::getSessionId, sessionId);
-            wrapper.eq(AssistantSessionContext::getContextVersion, expectedVersion);
+            LambdaUpdateWrapper<ChatSessionContext> wrapper = new LambdaUpdateWrapper<>();
+            wrapper.eq(ChatSessionContext::getSessionId, sessionId);
+            wrapper.eq(ChatSessionContext::getContextVersion, expectedVersion);
             updater.accept(wrapper);
             int rows = contextMapper.update(null, wrapper);
             if (rows > 0) {
                 return;
             }
-            AssistantSessionContext latest = contextMapper.selectById(sessionId);
+            ChatSessionContext latest = contextMapper.selectById(sessionId);
             if (latest == null) {
                 return;
             }

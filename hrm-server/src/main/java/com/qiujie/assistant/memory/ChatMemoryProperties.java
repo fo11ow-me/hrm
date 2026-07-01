@@ -12,8 +12,8 @@ import org.springframework.stereotype.Component;
  */
 @Data
 @Component
-@ConfigurationProperties(prefix = "agent.memory")
-public class AssistantMemoryProperties {
+@ConfigurationProperties(prefix = "chat.memory")
+public class ChatMemoryProperties {
 
     private int l1MessageTrigger = 4;
     private int l1TokenTrigger = 1200;

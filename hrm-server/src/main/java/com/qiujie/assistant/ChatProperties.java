@@ -12,9 +12,9 @@ import jakarta.annotation.PostConstruct;
 @Data
 @Component
 @ConfigurationProperties(prefix = "assistant")
-public class AssistantProperties {
+public class ChatProperties {
 
-    private static final Logger log = LoggerFactory.getLogger(AssistantProperties.class);
+    private static final Logger log = LoggerFactory.getLogger(ChatProperties.class);
 
     private boolean enabled = true;
 

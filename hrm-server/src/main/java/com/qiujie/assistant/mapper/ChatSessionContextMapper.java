@@ -1,7 +1,7 @@
 package com.qiujie.assistant.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.qiujie.assistant.entity.AssistantSessionContext;
+import com.qiujie.assistant.entity.ChatSessionContext;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
@@ -10,5 +10,5 @@ import org.apache.ibatis.annotations.Mapper;
  * @author qiujie
  */
 @Mapper
-public interface AssistantSessionContextMapper extends BaseMapper<AssistantSessionContext> {
+public interface ChatSessionContextMapper extends BaseMapper<ChatSessionContext> {
 }

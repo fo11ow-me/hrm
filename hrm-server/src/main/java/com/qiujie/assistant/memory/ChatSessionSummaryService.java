@@ -1,8 +1,8 @@
 package com.qiujie.assistant.memory;
 
-import com.qiujie.assistant.entity.AgentMessage;
-import com.qiujie.assistant.entity.AssistantSessionContext;
-import com.qiujie.assistant.mapper.AssistantSessionContextMapper;
+import com.qiujie.assistant.entity.ChatMessage;
+import com.qiujie.assistant.entity.ChatSessionContext;
+import com.qiujie.assistant.mapper.ChatSessionContextMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,14 +21,14 @@ import java.util.List;
  * @author qiujie
  */
 @Service
-public class AssistantSessionSummaryService {
+public class ChatSessionSummaryService {
 
-    private static final Logger log = LoggerFactory.getLogger(AssistantSessionSummaryService.class);
+    private static final Logger log = LoggerFactory.getLogger(ChatSessionSummaryService.class);
     private static final int SUMMARY_CHAR_LIMIT = 2000;
     private static final int PER_MESSAGE_CHAR_LIMIT = 160;
     private static final int TOKEN_DIVISOR = 4;
 
-    private final AssistantSessionContextMapper contextMapper;
+    private final ChatSessionContextMapper contextMapper;
     private final Clock clock;
     private final int messageThreshold;
     private final int tokenThreshold;
@@ -42,18 +42,18 @@ public class AssistantSessionSummaryService {
      * @param tokenThreshold   触发摘要的 token 估算阈值
      * @param staleDays        摘要过期天数
      */
-    public AssistantSessionSummaryService(
-            AssistantSessionContextMapper contextMapper,
-            @Value("${agent.session.summary.message-threshold:20}") int messageThreshold,
-            @Value("${agent.session.summary.token-threshold:8000}") int tokenThreshold,
-            @Value("${agent.session.summary.stale-days:7}") int staleDays) {
+    public ChatSessionSummaryService(
+            ChatSessionContextMapper contextMapper,
+            @Value("${chat.session.summary.message-threshold:20}") int messageThreshold,
+            @Value("${chat.session.summary.token-threshold:8000}") int tokenThreshold,
+            @Value("${chat.session.summary.stale-days:7}") int staleDays) {
         this(contextMapper, Clock.systemDefaultZone(), messageThreshold, tokenThreshold, staleDays);
     }
 
     /**
      * 包级可见全参构造（用于测试注入 Clock）
      */
-    AssistantSessionSummaryService(AssistantSessionContextMapper contextMapper, Clock clock,
+    ChatSessionSummaryService(ChatSessionContextMapper contextMapper, Clock clock,
                                    int messageThreshold, int tokenThreshold, int staleDays) {
         this.contextMapper = contextMapper;
         this.clock = clock;
@@ -70,7 +70,7 @@ public class AssistantSessionSummaryService {
      * @return 摘要文本，或 {@code null}
      */
     public String loadReusableSummary(Long sessionId, LocalDateTime lastMessageAt) {
-        AssistantSessionContext ctx = contextMapper.selectById(sessionId);
+        ChatSessionContext ctx = contextMapper.selectById(sessionId);
         if (ctx == null || ctx.getSummaryText() == null || ctx.getSummaryText().isBlank()) {
             return null;
         }
@@ -104,10 +104,10 @@ public class AssistantSessionSummaryService {
      * @param messages 消息列表
      * @return 估算的 token 数
      */
-    public int estimateTokens(List<AgentMessage> messages) {
+    public int estimateTokens(List<ChatMessage> messages) {
         if (messages == null || messages.isEmpty()) return 0;
         int totalChars = messages.stream()
-                .map(AgentMessage::getContent)
+                .map(ChatMessage::getContent)
                 .filter(c -> c != null && !c.isBlank())
                 .mapToInt(String::length)
                 .sum();
@@ -123,16 +123,16 @@ public class AssistantSessionSummaryService {
      * @param recentLimit 保留为上下文的最近消息数量
      * @return 摘要文本，无需摘要时返回 {@code null}
      */
-    public String summarizeAndPersist(Long sessionId, List<AgentMessage> messages, int recentLimit) {
+    public String summarizeAndPersist(Long sessionId, List<ChatMessage> messages, int recentLimit) {
         if (messages == null || messages.isEmpty()) return null;
         int keepRecent = Math.max(1, recentLimit);
         int summaryCount = Math.max(0, messages.size() - keepRecent);
         if (summaryCount == 0) return null;
-        List<AgentMessage> forSummary = messages.subList(0, summaryCount);
+        List<ChatMessage> forSummary = messages.subList(0, summaryCount);
         String text = buildSummaryText(forSummary);
-        AssistantSessionContext ctx = contextMapper.selectById(sessionId);
+        ChatSessionContext ctx = contextMapper.selectById(sessionId);
         if (ctx == null) {
-            ctx = new AssistantSessionContext();
+            ctx = new ChatSessionContext();
             ctx.setSessionId(sessionId);
             ctx.setContextVersion(0L);
         }
@@ -162,10 +162,10 @@ public class AssistantSessionSummaryService {
      * @param messages 消息列表
      * @return 摘要文本
      */
-    private String buildSummaryText(List<AgentMessage> messages) {
+    private String buildSummaryText(List<ChatMessage> messages) {
         StringBuilder sb = new StringBuilder("历史摘要:").append(System.lineSeparator());
         int currentChars = sb.length();
-        for (AgentMessage m : messages) {
+        for (ChatMessage m : messages) {
             String line = "- %s：%s".formatted(
                     "USER".equals(m.getRole()) ? "用户" : "助手",
                     truncateContent(m.getContent()));

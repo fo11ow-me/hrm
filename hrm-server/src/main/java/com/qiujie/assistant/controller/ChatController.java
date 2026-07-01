@@ -1,9 +1,9 @@
 package com.qiujie.assistant.controller;
 
-import com.qiujie.assistant.dto.AgentChatRequest;
-import com.qiujie.assistant.entity.AssistantMessage;
-import com.qiujie.assistant.entity.AssistantSession;
-import com.qiujie.assistant.service.AgentService;
+import com.qiujie.assistant.dto.ChatRequest;
+import com.qiujie.assistant.entity.ChatMessage;
+import com.qiujie.assistant.entity.ChatSession;
+import com.qiujie.assistant.service.ChatService;
 import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,7 +17,7 @@ import java.util.Map;
 /**
  * AI 助手控制器：提供同步对话、SSE 流式对话和会话管理三大类接口。
  * <p>
- * 所有业务逻辑都委托给 {@link AgentService}，Controller 仅做路由分发——
+ * 所有业务逻辑都委托给 {@link ChatService}，Controller 仅做路由分发——
  * 这是 Spring MVC 的标准分层实践：Controller 负责 HTTP 协议适配，
  * Service 负责业务编排，两者之间通过 DTO 传递数据。
  * </p>
@@ -26,10 +26,10 @@ import java.util.Map;
  */
 @RestController // 等同于 @Controller + @ResponseBody，所有方法返回值自动序列化为 JSON
 @RequestMapping("/assistant") // 统一资源前缀，所有接口在 /assistant 路径下
-public class AssistantController {
+public class ChatController {
 
-    @Autowired // 按类型注入 AgentService Bean，负责对话编排、会话持久化、记忆管理等所有业务逻辑
-    private AgentService agentService;
+    @Autowired // 按类型注入 AssistantService Bean，负责对话编排、会话持久化、记忆管理等所有业务逻辑
+    private ChatService chatService;
 
     /**
      * 同步对话接口。
@@ -41,15 +41,15 @@ public class AssistantController {
      * @param request 包含 conversationId（可选）、message（必填）、mode（可选，默认 CHAT）
      * @return 统一响应体，data 中包含 conversationId、answer、suggestions
      */
-    @PostMapping("/chat") // POST /assistant/chat —— 创建资源（新消息 + 可能的隐式新会话）
-    public ResponseDTO chat(@RequestBody AgentChatRequest request) { // @RequestBody 将 JSON 请求体反序列化为 DTO
-        return agentService.chatSync(request); // 同步调用，阻塞直到 LLM 返回完整结果
+    @PostMapping("/chat")
+    public SseEmitter chat(@RequestBody ChatRequest request) {
+        return chatService.chat(request);
     }
 
     /**
      * SSE 流式对话接口。
      * <p>
-     * 与 {@link #chat(AgentChatRequest)} 的区别：回答以 SSE（Server-Sent Events）
+     * 与 {@link #chat(ChatRequest)} 的区别：回答以 SSE（Server-Sent Events）
      * 流式推送给前端，每个字符作为一个 event:token 事件发送，产生打字机效果。
      * 前端使用 EventSource 或 fetch + ReadableStream 消费。
      * </p>
@@ -57,9 +57,9 @@ public class AssistantController {
      * @param request 与同步接口结构相同
      * @return SseEmitter 实例，Spring MVC 会将其管理为长连接异步响应
      */
-    @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE) // 声明响应类型为 text/event-stream，触发 SSE 协议
-    public SseEmitter chatStream(@RequestBody AgentChatRequest request) { // SseEmitter 是 Spring MVC 提供的 SSE 工具类
-        return agentService.chat(request); // 此方法内部会另启线程逐字推送，方法立即返回 emitter
+    @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter chatStream(@RequestBody ChatRequest request) {
+        return chatService.chat(request);
     }
 
     /**
@@ -71,7 +71,7 @@ public class AssistantController {
      */
     @GetMapping("/conversations") // GET /assistant/conversations —— 查询资源集合
     public ResponseDTO listSessions() {
-        List<AssistantSession> sessions = agentService.listSessions(); // 从 assistant_session 表查询当前员工的会话
+        List<ChatSession> sessions = chatService.listSessions(); // 从 ast_chat_session 表查询当前员工的会话
         return Response.success(sessions); // 包装为统一响应格式 { code:200, data:[...] }
     }
 
@@ -84,7 +84,7 @@ public class AssistantController {
      */
     @GetMapping("/conversations/{id}") // GET /assistant/conversations/{id} —— 路径变量占位单个资源
     public ResponseDTO getSession(@PathVariable Long id) { // @PathVariable 从 URL 路径提取 id
-        AssistantSession session = agentService.getSession(id); // 按主键查询
+        ChatSession session = chatService.getSession(id); // 按主键查询
         if (session == null) {
             return com.qiujie.dto.Response.error("会话不存在"); // 返回 200+error code，前端根据 code 判断
         }
@@ -100,7 +100,7 @@ public class AssistantController {
      */
     @GetMapping("/conversations/{id}/messages") // GET /assistant/conversations/{id}/messages —— 子资源查询
     public ResponseDTO listMessages(@PathVariable Long id) {
-        List<AssistantMessage> messages = agentService.listMessages(id); // 按 session_id 查询并按 id 升序排列
+        List<ChatMessage> messages = chatService.listMessages(id); // 按 session_id 查询并按 id 升序排列
         return Response.success(messages);
     }
 
@@ -109,12 +109,12 @@ public class AssistantController {
      * <p>
      * CHAT 模式下 LLM 可以调用 @Tool 查询员工个人数据（考勤、请假等）；
      * KB_SEARCH 模式下 LLM 以知识库检索为主。
-     * 同一会话内可动态切换，模式记录在 assistant_session.mode 字段中。
+     * 同一会话内可动态切换，模式记录在 ast_chat_session.mode 字段中。
      * </p>
      */
     @PutMapping("/conversations/{id}/mode") // PUT 语义：替换指定资源的指定属性
     public ResponseDTO switchMode(@PathVariable Long id, @RequestBody Map<String, String> body) { // PUT 请求体中的 mode 值
-        agentService.switchMode(id, body.get("mode")); // 校验 mode 值后更新
+        chatService.switchMode(id, body.get("mode")); // 校验 mode 值后更新
         return Response.success(); // 无 data 返回，仅表示操作成功
     }
 
@@ -127,7 +127,7 @@ public class AssistantController {
      */
     @DeleteMapping("/conversations/{id}") // DELETE /assistant/conversations/{id} —— 删除指定资源
     public ResponseDTO deleteSession(@PathVariable Long id) {
-        agentService.deleteSession(id); // 事务内依次删除 assistant_message → assistant_session_context → assistant_session
+        chatService.deleteSession(id); // 事务内依次删除 ast_chat_message → ast_chat_session_context → ast_chat_session
         return Response.success();
     }
 }

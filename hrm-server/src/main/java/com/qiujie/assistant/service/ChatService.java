@@ -1,14 +1,14 @@
 package com.qiujie.assistant.service;
 
-import com.qiujie.assistant.dto.AgentChatRequest;
-import com.qiujie.assistant.entity.AgentMessage;
-import com.qiujie.assistant.entity.AgentSession;
-import com.qiujie.assistant.entity.AssistantSessionContext;
-import com.qiujie.assistant.mapper.AgentMessageMapper;
-import com.qiujie.assistant.mapper.AgentSessionMapper;
-import com.qiujie.assistant.mapper.AssistantSessionContextMapper;
-import com.qiujie.assistant.memory.AssistantMemoryProperties;
-import com.qiujie.assistant.memory.AssistantSessionSummaryService;
+import com.qiujie.assistant.dto.ChatRequest;
+import com.qiujie.assistant.entity.ChatMessage;
+import com.qiujie.assistant.entity.ChatSession;
+import com.qiujie.assistant.entity.ChatSessionContext;
+import com.qiujie.assistant.mapper.ChatMessageMapper;
+import com.qiujie.assistant.mapper.ChatSessionMapper;
+import com.qiujie.assistant.mapper.ChatSessionContextMapper;
+import com.qiujie.assistant.memory.ChatMemoryProperties;
+import com.qiujie.assistant.memory.ChatSessionSummaryService;
 import com.qiujie.util.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,26 +27,26 @@ import java.util.Map;
 import java.util.Set;
 
 @Service
-public class AgentService {
+public class ChatService {
 
-    private static final Logger log = LoggerFactory.getLogger(AgentService.class);
+    private static final Logger log = LoggerFactory.getLogger(ChatService.class);
 
-    private final AgentSessionMapper sessionMapper;
-    private final AgentMessageMapper messageMapper;
-    private final AssistantSessionContextMapper contextMapper;
-    private final AssistantMemoryService memoryService;
-    private final AssistantSessionSummaryService summaryService;
+    private final ChatSessionMapper sessionMapper;
+    private final ChatMessageMapper messageMapper;
+    private final ChatSessionContextMapper contextMapper;
+    private final ChatMemoryService memoryService;
+    private final ChatSessionSummaryService summaryService;
     private final SecurityUtil securityUtil;
-    private final AssistantMemoryProperties memoryProps;
+    private final ChatMemoryProperties memoryProps;
     private final ChatClient chatClient;
 
-    public AgentService(AgentSessionMapper sessionMapper,
-            AgentMessageMapper messageMapper,
-            AssistantSessionContextMapper contextMapper,
-            AssistantMemoryService memoryService,
-            AssistantSessionSummaryService summaryService,
+    public ChatService(ChatSessionMapper sessionMapper,
+            ChatMessageMapper messageMapper,
+            ChatSessionContextMapper contextMapper,
+            ChatMemoryService memoryService,
+            ChatSessionSummaryService summaryService,
             SecurityUtil securityUtil,
-            AssistantMemoryProperties memoryProps,
+            ChatMemoryProperties memoryProps,
             ChatClient.Builder chatClientBuilder) {
         this.sessionMapper = sessionMapper;
         this.messageMapper = messageMapper;
@@ -59,14 +59,14 @@ public class AgentService {
     }
 
     @Transactional
-    public SseEmitter chat(AgentChatRequest request) {
+    public SseEmitter chat(ChatRequest request) {
         SseEmitter emitter = new SseEmitter(300000L);
         Integer staffId = securityUtil.getCurrentOperatorId();
         org.springframework.security.core.Authentication auth =
                 org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-        AgentSession session = getOrCreateSession(request, staffId);
+        ChatSession session = getOrCreateSession(request, staffId);
 
-        AgentMessage userMsg = new AgentMessage()
+        ChatMessage userMsg = new ChatMessage()
                 .setSessionId(session.getId()).setRole("USER")
                 .setContent(request.getMessage())
                 .setCreateTime(LocalDateTime.now());
@@ -76,7 +76,7 @@ public class AgentService {
         String memoryContext = memoryService.buildContext(session);
 
         // L3: 加载最近消息，token 超阈值则截断
-        List<AgentMessage> recentMessages = loadRecentMessages(session.getId());
+        List<ChatMessage> recentMessages = loadRecentMessages(session.getId());
         int estimatedTokens = memoryService.estimateTokens(recentMessages);
         if (estimatedTokens > memoryProps.getMaxTokens()) {
             int keep = memoryProps.getKeepRecent();
@@ -90,7 +90,7 @@ public class AgentService {
         try {
             // 将截断后的历史消息转换为 Spring AI Message 列表
             List<Message> historyMessages = new ArrayList<>();
-            for (AgentMessage m : recentMessages) {
+            for (ChatMessage m : recentMessages) {
                 if (m.getContent() == null || m.getContent().isBlank()) continue;
                 if ("USER".equals(m.getRole())) {
                     historyMessages.add(new UserMessage(m.getContent()));
@@ -127,13 +127,13 @@ public class AgentService {
                     if (i % 5 == 0) Thread.sleep(5);
                 }
 
-                AgentMessage assistantMsg = new AgentMessage()
+                ChatMessage assistantMsg = new ChatMessage()
                         .setSessionId(sessionId).setRole("ASSISTANT")
                         .setContent(finalAnswer)
                         .setCreateTime(LocalDateTime.now());
                 messageMapper.insert(assistantMsg);
 
-                AgentSession s = sessionMapper.selectById(sessionId);
+                ChatSession s = sessionMapper.selectById(sessionId);
                 if (s != null) {
                     s.setMessageCount(s.getMessageCount() + 2);
                     sessionMapper.updateById(s);
@@ -161,21 +161,21 @@ public class AgentService {
     /**
      * 加载指定会话的全部消息（按 id 升序），用于 L3 运行时截断估算。
      */
-    private List<AgentMessage> loadRecentMessages(Long sessionId) {
+    private List<ChatMessage> loadRecentMessages(Long sessionId) {
         return messageMapper.selectList(
-                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<AgentMessage>()
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<ChatMessage>()
                         .eq("session_id", sessionId).orderByAsc("id"));
     }
 
     /**
-     * 获取或创建会话。首次创建时同时初始化 AssistantSessionContext 行。
+     * 获取或创建会话。首次创建时同时初始化 ChatSessionContext 行。
      */
-    private AgentSession getOrCreateSession(AgentChatRequest request, Integer staffId) {
+    private ChatSession getOrCreateSession(ChatRequest request, Integer staffId) {
         if (request.getSessionId() != null) {
-            AgentSession session = sessionMapper.selectById(request.getSessionId());
+            ChatSession session = sessionMapper.selectById(request.getSessionId());
             if (session != null) return session;
         }
-        AgentSession session = new AgentSession()
+        ChatSession session = new ChatSession()
                 .setStaffId(staffId)
                 .setTitle(request.getMessage() != null
                         ? request.getMessage().substring(0, Math.min(50, request.getMessage().length()))
@@ -185,7 +185,7 @@ public class AgentService {
                 .setCreateTime(LocalDateTime.now()).setUpdateTime(LocalDateTime.now());
         sessionMapper.insert(session);
         // 初始化上下文行，供记忆服务使用
-        AssistantSessionContext ctx = new AssistantSessionContext();
+        ChatSessionContext ctx = new ChatSessionContext();
         ctx.setSessionId(session.getId());
         ctx.setContextVersion(0L);
         ctx.setUpdateTime(LocalDateTime.now());
@@ -194,22 +194,22 @@ public class AgentService {
     }
 
     /** 获取用户的历史会话列表 */
-    public List<AgentSession> listSessions() {
+    public List<ChatSession> listSessions() {
         Integer staffId = securityUtil.getCurrentOperatorId();
         return sessionMapper.selectList(
-                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<AgentSession>()
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<ChatSession>()
                         .eq("staff_id", staffId).orderByDesc("update_time"));
     }
 
     /** 获取单个会话详情 */
-    public AgentSession getSession(Long sessionId) {
+    public ChatSession getSession(Long sessionId) {
         return sessionMapper.selectById(sessionId);
     }
 
     /** 获取会话消息历史 */
-    public List<AgentMessage> listMessages(Long sessionId) {
+    public List<ChatMessage> listMessages(Long sessionId) {
         return messageMapper.selectList(
-                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<AgentMessage>()
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<ChatMessage>()
                         .eq("session_id", sessionId).orderByAsc("id"));
     }
 
@@ -220,7 +220,7 @@ public class AgentService {
         if (mode != null && !VALID_MODES.contains(mode)) {
             throw new IllegalArgumentException("不支持的模式: " + mode + "，有效值: CHAT, KB_SEARCH");
         }
-        AgentSession session = sessionMapper.selectById(sessionId);
+        ChatSession session = sessionMapper.selectById(sessionId);
         if (session != null) {
             session.setMode(mode);
             sessionMapper.updateById(session);
