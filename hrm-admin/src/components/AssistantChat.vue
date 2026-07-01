@@ -50,6 +50,9 @@
 
         <div ref="messagesPane" class="assistant-messages" @scroll="onScroll">
           <el-skeleton v-if="loading" :rows="3" animated style="padding:8px" />
+          <div v-if="loading" class="loading-dots">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          </div>
           <div v-if="loadingMore" style="text-align:center;padding:8px;color:#999;font-size:12px">加载中...</div>
           <div
             v-for="(item, index) in messages"
@@ -438,5 +441,26 @@ export default {
   gap: 10px;
   align-items: end;
   padding-top: 12px;
+}
+
+.loading-dots {
+  text-align: center;
+  padding: 8px 0;
+}
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #999;
+  margin: 0 3px;
+  animation: bounce 1.4s infinite ease-in-out both;
+}
+.dot:nth-child(1) { animation-delay: 0s; }
+.dot:nth-child(2) { animation-delay: 0.2s; }
+.dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0); opacity: 0.3; }
+  40% { transform: scale(1); opacity: 1; }
 }
 </style>
