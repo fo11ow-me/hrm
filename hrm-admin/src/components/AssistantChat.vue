@@ -50,11 +50,7 @@
 
         <div ref="messagesPane" class="assistant-messages" @scroll="onScroll">
           <el-skeleton v-if="loading" :rows="3" animated style="padding:8px" />
-          <div v-if="hasMore" class="load-more">
-            <el-button size="mini" :loading="loadingMore" @click="loadMore">
-              加载更早消息
-            </el-button>
-          </div>
+          <div v-if="loadingMore" style="text-align:center;padding:8px;color:#999;font-size:12px">加载中...</div>
           <div
             v-for="(item, index) in messages"
             :key="index"
