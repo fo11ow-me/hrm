@@ -192,7 +192,6 @@ public class ChatMemoryService {
         toWrite.setUpdateTime(LocalDateTime.now());               // 记录最后更新时间
 
         // —— token 估算，用于 L2 触发判断 ——
-        int totalTokens = estimateTokens(allMessages);   // 会话总 token
         int newTokens = estimateTokens(newMessages);     // 新增 token
 
         // 乐观锁版本号：读时版本 + 1
@@ -201,15 +200,34 @@ public class ChatMemoryService {
                 : 0L;
         toWrite.setContextVersion(expectedVersion + 1); // 写入时版本号 +1
 
-        // —— L2 判断：会话总 token 超阈值且增量达标时，生成紧凑摘要 ——
-        if (shouldCompactSession(totalTokens, newMessages.size(), newTokens)) {
-            // L2 只依赖 L1：旧摘要 + 当前累计记忆 → 新摘要（不读原始消息）
-            toWrite.setCompactSummary(summarizer.summarizeCompactSummary(
-                    ctx.getCompactSummary(),                    // 已有 L2 摘要
-                    toWrite.getSessionMemory()));               // 刚生成的 L1 记忆（已包含对话全貌）
-            toWrite.setCompactSummaryBaseMessageId(allMessages.get(0).getId()); // L2 起始消息 ID
-            toWrite.setCompactSummaryRangeEndMessageId(
-                    newMessages.get(newMessages.size() - 1).getId()); // L2 结束消息 ID
+        // —— L2：FIFO 追加模式，从新消息独立提取要点 ——
+        if (shouldCompactSession(newMessages.size(), newTokens)) {
+            String newChunk = summarizer.summarizeCompactSummary(
+                    ctx.getCompactSummary(), newMessages, toolMode);
+            if (!"NONE".equals(newChunk)) {
+                String current = ctx.getCompactSummary() != null ? ctx.getCompactSummary() : "";
+                String merged = current + "\n" + newChunk;
+
+                // 超 token 阈值时从头部丢弃，找标点边界保证句子完整
+                int estimatedTokens = merged.length() / TOKEN_DIVISOR;
+                if (estimatedTokens > props.getCompactSummaryMaxTokens()) {
+                    int cutoffTokens = estimatedTokens - props.getCompactSummaryMaxTokens();
+                    int cutFrom = cutoffTokens * TOKEN_DIVISOR;
+                    for (int i = cutFrom; i < merged.length(); i++) {
+                        char c = merged.charAt(i);
+                        if (c == '。' || c == '\n' || c == '！' || c == '？' || c == '.') {
+                            cutFrom = i + 1;
+                            break;
+                        }
+                    }
+                    merged = merged.substring(cutFrom);
+                }
+
+                toWrite.setCompactSummary(merged);
+                toWrite.setCompactSummaryBaseMessageId(allMessages.get(0).getId());
+                toWrite.setCompactSummaryRangeEndMessageId(
+                        newMessages.get(newMessages.size() - 1).getId());
+            }
         }
 
         // —— 乐观锁 CAS 写入 ——
@@ -273,10 +291,9 @@ public class ChatMemoryService {
      * @param newTokens    新增 token 估算值
      * @return true 需生成紧凑摘要，false 跳过
      */
-    private boolean shouldCompactSession(int totalTokens, int newMsgCount, int newTokens) {
-        return totalTokens > props.getSessionTokenThreshold()          // 总 token 超全局门槛
-                && (newMsgCount >= props.getL2MessageTrigger()         // 且新消息数达标
-                || newTokens >= props.getL2TokenTrigger());            // 或新增 token 达标
+    private boolean shouldCompactSession(int newMsgCount, int newTokens) {
+        return newMsgCount >= props.getL2MessageTrigger()              // 新消息数达标
+                || newTokens >= props.getL2TokenTrigger();              // 或新增 token 达标
     }
 
     /**

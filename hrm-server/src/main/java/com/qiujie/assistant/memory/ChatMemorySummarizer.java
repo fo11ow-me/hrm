@@ -70,18 +70,20 @@ public class ChatMemorySummarizer {
     }
 
     /**
-     * L2: 纯记忆压缩——只依赖 L1 记忆，不读原始消息。
-     * L1 本身已是增量累计的语义要点，L2 仅需进一步精炼。
+     * L2: FIFO 追加模式——从本轮新消息独立提取要点，追加到已有摘要尾部。
+     * 不读 L1，不从 L1 派生，独立信息源。
      *
-     * @param existingCompactSummary 已有的紧凑摘要（可能为空）
-     * @param sessionMemory          当前的 L1 会话记忆（已包含对话全貌）
-     * @return 新的紧凑摘要
+     * @param existingCompactSummary 已有的紧凑摘要全文（可能为空）
+     * @param newMessages            本轮新增的原始消息列表
+     * @param toolMode               当前工具模式
+     * @return 本轮需追加的新要点，无值得记忆的内容时返回 "NONE"
      */
     public String summarizeCompactSummary(
-            String existingCompactSummary, String sessionMemory) {
+            String existingCompactSummary, List<ChatMessage> newMessages, String toolMode) {
         return callForText(compactSummaryPromptTemplate.create(Map.of(
                 "existingCompactSummary", defaultText(existingCompactSummary),
-                "sessionMemory", defaultText(sessionMemory)
+                "newMessages", formatMessages(newMessages),
+                "currentToolMode", defaultText(toolMode)
         )));
     }
 
