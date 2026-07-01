@@ -139,7 +139,7 @@ export default {
       conversationId: null,
       conversations: [],
       messages: [],
-      suggestions: [],
+      suggestions: ['我的个人信息', '查询我的考勤', '我的调休余额'],
       hasMore: false,
       nextCursor: null,
       question: '',
@@ -199,7 +199,7 @@ export default {
     startNewConversation () {
       this.conversationId = null
       this.messages = []
-      this.suggestions = []
+      this.suggestions = ['我的个人信息', '查询我的考勤', '我的调休余额']
       this.hasMore = false
       this.nextCursor = null
       this.question = ''
