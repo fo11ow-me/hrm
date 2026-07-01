@@ -3,7 +3,7 @@ server:
 
 spring:
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:prod}
+    active: ${SPRING_PROFILES_ACTIVE:dev}
 
   datasource:
     master:
@@ -121,6 +121,10 @@ knowledge:
   chunk:
     max-size: ${KNOWLEDGE_CHUNK_MAX_SIZE:1000}
     overlap: ${KNOWLEDGE_CHUNK_OVERLAP:100}
+  embedding:
+    api-key: ${DASHSCOPE_API_KEY:}
+    base-url: ${DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
+    model: ${DASHSCOPE_EMBEDDING_MODEL:text-embedding-v4}
 
 holidays:
   - 2024-01-01
