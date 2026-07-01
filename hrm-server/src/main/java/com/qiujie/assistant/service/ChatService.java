@@ -225,7 +225,7 @@ public class ChatService {
                 // event:meta 携带 conversationId 和快捷追问建议
                 emitter.send(SseEmitter.event().name("meta")
                         .data(Map.of("conversationId", sessionId, "suggestions",
-                                List.of("查询我的考勤", "请假流程是什么", "本月薪资明细"))));
+                                List.of("我的个人信息", "查询我的考勤", "我的调休余额"))));
                 emitter.complete();                                   // 通知客户端流正常结束
             } catch (Exception e) {
                 log.error("SSE send failed", e);
