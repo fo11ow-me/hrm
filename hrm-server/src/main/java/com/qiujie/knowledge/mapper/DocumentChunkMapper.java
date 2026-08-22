@@ -49,11 +49,6 @@ public class DocumentChunkMapper {
         return chunk;
     }
 
-    public int deleteByDocumentId(Long documentId) {
-        jdbc.update("DELETE FROM vector_store WHERE metadata::jsonb ->> 'documentId' = ?", String.valueOf(documentId));
-        return jdbc.update("DELETE FROM document_chunk WHERE document_id = ?", documentId);
-    }
-
     public List<DocumentChunk> selectByDocumentIdOrderByChunkIndex(Long documentId) {
         return jdbc.query(
                 "SELECT id, document_id, chunk_index, chunk_text, token_count, "

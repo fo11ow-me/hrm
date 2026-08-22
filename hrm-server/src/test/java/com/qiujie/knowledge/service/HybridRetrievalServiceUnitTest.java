@@ -6,10 +6,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import javax.sql.DataSource;
 import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
 
 @DisplayName("混合检索 — RRF 融合")
 class HybridRetrievalServiceUnitTest {
@@ -18,7 +20,8 @@ class HybridRetrievalServiceUnitTest {
 
     @BeforeEach
     void setUp() {
-        service = new HybridRetrievalService(null); // kbDataSource = null
+        // rrfFuse 不触碰 kbJdbc，mock DataSource 仅满足 JdbcTemplate 构造断言
+        service = new HybridRetrievalService(mock(DataSource.class));
         ReflectionTestUtils.setField(service, "rrfK", 60);
         ReflectionTestUtils.setField(service, "windowSize", 0); // disable neighbor expansion
     }

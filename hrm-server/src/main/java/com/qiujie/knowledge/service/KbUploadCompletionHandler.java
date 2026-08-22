@@ -2,23 +2,20 @@ package com.qiujie.knowledge.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.qiujie.knowledge.entity.KnowledgeDocument;
-import com.qiujie.knowledge.enums.DocumentStatusEnum;
-import com.qiujie.knowledge.event.DocumentIngestionEvent;
+import com.qiujie.knowledge.lifecycle.DocumentLifecycleService;
 import com.qiujie.knowledge.mapper.KnowledgeDocumentMapper;
 import com.qiujie.spi.UploadCompletionHandler;
 import com.qiujie.spi.UploadSessionInfo;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 知识库上传完成处理器：创建 KnowledgeDocument + 发布 ETL 事件。
+ * 知识库上传完成处理器：分片上传协议与文档生命周期的薄适配器。
+ * 业务逻辑（建文档、事务提交后异步 ETL、状态机）全部在 {@link DocumentLifecycleService} 内部。
  */
 @Component
 public class KbUploadCompletionHandler implements UploadCompletionHandler {
@@ -27,7 +24,7 @@ public class KbUploadCompletionHandler implements UploadCompletionHandler {
     private KnowledgeDocumentMapper documentMapper;
 
     @Autowired
-    private ApplicationEventPublisher eventPublisher;
+    private DocumentLifecycleService lifecycle;
 
     @Override
     public String getStoragePrefix() {
@@ -36,10 +33,8 @@ public class KbUploadCompletionHandler implements UploadCompletionHandler {
 
     @Override
     public Map<String, Object> checkDedup(String fileHash) {
-        // 只要文件未被删除且非失败状态，即视为已存在，避免重复上传
         List<KnowledgeDocument> existing = documentMapper.selectList(
-                new QueryWrapper<KnowledgeDocument>()
-                        .eq("file_hash", fileHash));
+                new QueryWrapper<KnowledgeDocument>().eq("file_hash", fileHash));
         if (existing.isEmpty()) return null;
         KnowledgeDocument doc = existing.get(0);
         Map<String, Object> result = new HashMap<>();
@@ -49,24 +44,14 @@ public class KbUploadCompletionHandler implements UploadCompletionHandler {
     }
 
     @Override
-    @Transactional
     public Map<String, Object> onComplete(String mergedKey, UploadSessionInfo session) {
-        KnowledgeDocument doc = new KnowledgeDocument()
-                .setName(mergedKey)
-                .setOldName(session.getFileName())
-                .setType(session.getFileExt())
-                .setFileHash(session.getFileHash())
-                .setFileSize(session.getFileSize())
-                .setStatus(DocumentStatusEnum.UPLOADED.name())
-                .setStaffId(session.getStaffId())
-                .setUploadTime(LocalDateTime.now());
-        documentMapper.insert(doc);
-
-        eventPublisher.publishEvent(new DocumentIngestionEvent(doc.getId()));
-
+        DocumentLifecycleService.RegisterResult r = lifecycle.register(
+                new DocumentLifecycleService.RegisterCommand(
+                        mergedKey, session.getFileName(), session.getFileExt(),
+                        session.getFileHash(), session.getFileSize(), session.getStaffId()));
         Map<String, Object> result = new HashMap<>();
-        result.put("documentId", doc.getId());
-        result.put("status", doc.getStatus());
+        result.put("documentId", r.documentId());
+        result.put("status", r.status());
         return result;
     }
 }

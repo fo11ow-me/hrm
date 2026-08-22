@@ -1,5 +1,6 @@
 package com.qiujie.knowledge.service;
 
+import com.qiujie.knowledge.lifecycle.VectorMetadata;
 import com.qiujie.knowledge.spi.KnowledgeSearchProvider;
 import com.qiujie.knowledge.spi.KnowledgeSearchProvider.SearchResult;
 import org.slf4j.Logger;
@@ -72,17 +73,10 @@ public class HybridRetrievalService implements KnowledgeSearchProvider {
                 while (rs.next()) {
                     String metaStr = rs.getString("metadata");
                     double sim = rs.getDouble("similarity");
-                    String docName = "";
-                    long docId = 0, chunkId = 0;
-                    if (metaStr != null) {
-                        try {
-                            com.fasterxml.jackson.databind.JsonNode m = new com.fasterxml.jackson.databind.ObjectMapper().readTree(metaStr);
-                            docName = m.path("documentName").asText("");
-                            docId = m.path("documentId").asLong(0);
-                            chunkId = m.path("chunkId").asLong(0);
-                        } catch (Exception ignored) {}
-                    }
-                    list.add(new SearchResult(rs.getString("content"), docName, docId, chunkId, sim, "vector"));
+                    // 经 VectorMetadata 契约解析（与写入方同源，容错存量旧数据）
+                    VectorMetadata meta = VectorMetadata.fromJson(metaStr);
+                    list.add(new SearchResult(rs.getString("content"),
+                            meta.documentName(), meta.documentId(), meta.chunkId(), sim, "vector"));
                 }
                 return list;
             }, pgVec, pgVec, vectorTopK);

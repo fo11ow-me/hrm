@@ -4,6 +4,7 @@ import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
 import com.qiujie.knowledge.dto.QaRequest;
 import com.qiujie.knowledge.entity.KbUploadSession;
+import com.qiujie.knowledge.lifecycle.DocumentLifecycleService;
 import com.qiujie.knowledge.mapper.KbUploadSessionMapper;
 import com.qiujie.knowledge.service.KbUploadCompletionHandler;
 import com.qiujie.knowledge.service.KnowledgeService;
@@ -31,6 +32,9 @@ public class KnowledgeController {
 
     @Autowired
     private KnowledgeService knowledgeService;
+
+    @Autowired
+    private DocumentLifecycleService lifecycle;
 
     @Autowired
     private QaService qaService;
@@ -69,12 +73,13 @@ public class KnowledgeController {
     }
 
     /**
-     * 逻辑删除知识库文档，同时移除 MinIO 文件和切片数据。
+     * 逻辑删除知识库文档，同时移除 MinIO 文件和切片数据（幂等）。
      */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('system:docs:delete')")
     public ResponseDTO delete(@PathVariable Long id) {
-        return knowledgeService.delete(id);
+        lifecycle.delete(new DocumentLifecycleService.DeleteCommand(id));
+        return Response.success();
     }
 
     /**
@@ -83,7 +88,9 @@ public class KnowledgeController {
     @PostMapping("/{id}/retry")
     @PreAuthorize("hasAnyAuthority('system:docs:upload')")
     public ResponseDTO retry(@PathVariable Long id) {
-        return knowledgeService.retry(id);
+        DocumentLifecycleService.RetryResult r =
+                lifecycle.retry(new DocumentLifecycleService.RetryCommand(id));
+        return r.accepted() ? Response.success("已重新提交处理") : Response.error(r.reason());
     }
 
     /**
