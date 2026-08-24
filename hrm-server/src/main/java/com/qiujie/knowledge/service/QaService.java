@@ -6,27 +6,24 @@ import com.qiujie.knowledge.spi.KnowledgeSearchProvider.SearchResult;
 import com.qiujie.knowledge.dto.QaRequest;
 import com.qiujie.knowledge.dto.QaResponse;
 import com.qiujie.knowledge.enums.EvidenceLevel;
-import com.qiujie.util.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import javax.sql.DataSource;
 import java.util.*;
 import java.util.stream.Collectors;
 
 /**
  * 知识库 RAG 问答编排服务（SSE 流式）。
- * 查询规划 → 混合检索 → 证据评估 → LLM 生成 → 引用溯源
  * <p>
- * 同步回答已移除，本服务仅保留 SSE 流式入口。
+ * 职责：编排 RAG 流水线（规划→检索→评估→生成→引用→持久化），
+ * 委托给拆出的组件（{@link RAGPrompts}、{@link QaRecordRepository}）和子服务。
  * </p>
  */
 @Service
@@ -44,20 +41,20 @@ public class QaService {
     private EvidenceAssessmentService evidenceService;
 
     @Autowired
-    private SecurityUtil securityUtil;
+    private RAGPrompts ragPrompts;
+
+    @Autowired
+    private QaRecordRepository qaRecordRepository;
 
     private final ChatClient chatClient;
-    private final JdbcTemplate kbJdbc;
     private final ThreadPoolTaskExecutor fileTaskExecutor;
 
     @Value("${knowledge.qa.max-context-chars:3000}")
     private int maxContextChars;
 
     public QaService(ChatClient.Builder chatClientBuilder,
-                     @Autowired(required = false) @Qualifier("kbDataSource") DataSource kbDataSource,
                      @Qualifier("fileTaskExecutor") ThreadPoolTaskExecutor fileTaskExecutor) {
         this.chatClient = chatClientBuilder.build();
-        this.kbJdbc = kbDataSource != null ? new JdbcTemplate(kbDataSource) : null;
         this.fileTaskExecutor = fileTaskExecutor;
     }
 
@@ -113,8 +110,8 @@ public class QaService {
                 meta.put("conversationId", IdUtil.fastSimpleUUID());
                 emitter.send(SseEmitter.event().name("meta").data(meta));
 
-                // 8. 持久化 QA 记录
-                saveQaRecord(question, answer, assessment.level().name(), citations);
+                // 8. 持久化 QA 记录（委托给仓库，失败静默）
+                qaRecordRepository.save(question, answer, assessment.level().name(), citations.size());
 
                 emitter.complete();
             } catch (Exception e) {
@@ -126,12 +123,17 @@ public class QaService {
         return emitter;
     }
 
+    // ==================== 私有：LLM 生成 ====================
+
+    /**
+     * 构建上下文 + 调用 LLM 生成回答。
+     * 失败时降级为 fallback 回答（不阻断流程）。
+     */
     private String generateAnswer(String question, List<SearchResult> results,
                                    EvidenceAssessmentService.Assessment assessment) {
-        List<Map<String, String>> references = new ArrayList<>();
+        // 构建参考资料上下文文本
         StringBuilder context = new StringBuilder();
         int charCount = 0;
-
         for (int i = 0; i < results.size(); i++) {
             var r = results.get(i);
             String snippet = String.format("[%d] 《%s》: %s\n",
@@ -139,16 +141,10 @@ public class QaService {
             if (charCount + snippet.length() > maxContextChars) break;
             context.append(snippet);
             charCount += snippet.length();
-
-            Map<String, String> ref = new HashMap<>();
-            ref.put("index", String.valueOf(i + 1));
-            ref.put("document", r.documentName());
-            ref.put("text", r.chunkText());
-            ref.put("score", String.format("%.2f", r.score()));
-            references.add(ref);
         }
 
-        String prompt = buildPrompt(question, context.toString(), assessment);
+        // 委托 RAGPrompts 构建 Prompt
+        String prompt = ragPrompts.buildAnswerPrompt(question, context.toString(), assessment);
         try {
             return chatClient.prompt()
                     .user(prompt)
@@ -160,23 +156,9 @@ public class QaService {
         }
     }
 
-    private String buildPrompt(String question, String context, EvidenceAssessmentService.Assessment assessment) {
-        return """
-                你是 HRM 系统的知识库助手，请根据以下参考资料回答用户问题。
-
-                证据充分度：%s - %s
-
-                参考资料：
-                %s
-
-                要求：
-                - 仅基于参考资料回答，不要臆测
-                - 如果资料不足以完全回答问题，明确说明局限性
-                - 回答时引用参考资料的编号，例如「根据[1]...」
-                - 回答简洁准确，用中文
-                """.formatted(assessment.level().name(), assessment.reason(), context);
-    }
-
+    /**
+     * LLM 失败降级——返回检索到的原始内容。
+     */
     private String fallbackAnswer(List<SearchResult> results,
                                    EvidenceAssessmentService.Assessment assessment) {
         if (results.isEmpty()) return "未找到相关信息。";
@@ -191,6 +173,8 @@ public class QaService {
         return sb.toString();
     }
 
+    // ==================== 私有：引用 ====================
+
     private List<QaResponse.CitationVO> buildCitations(List<SearchResult> results) {
         return results.stream()
                 .limit(5)
@@ -201,25 +185,7 @@ public class QaService {
                 .collect(Collectors.toList());
     }
 
-    private void saveQaRecord(String question, String answer, String evidenceLevel,
-                               List<QaResponse.CitationVO> citations) {
-        if (kbJdbc == null) return;
-        try {
-            Integer staffId = securityUtil.getCurrentOperatorId();
-            int citationCount = citations != null ? citations.size() : 0;
-            boolean answered = answer != null && !answer.startsWith("抱歉");
-
-            kbJdbc.update(
-                    "INSERT INTO kb_qa_record (question, answer, staff_id, evidence_level,"
-                    + " answered, citation_count, endpoint, success) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    question, answer, staffId, evidenceLevel,
-                    answered, citationCount, "qa/stream", true);
-        } catch (Exception e) {
-            log.warn("Failed to save QA record", e);
-        }
-    }
-
-    private String truncateText(String text, int maxLen) {
+    private static String truncateText(String text, int maxLen) {
         if (text == null) return "";
         return text.length() <= maxLen ? text : text.substring(0, maxLen) + "...";
     }
