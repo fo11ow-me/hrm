@@ -3,14 +3,11 @@ package com.qiujie.knowledge.controller;
 import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
 import com.qiujie.knowledge.dto.QaRequest;
-import com.qiujie.knowledge.entity.KbUploadSession;
 import com.qiujie.knowledge.lifecycle.DocumentLifecycleService;
-import com.qiujie.knowledge.mapper.KbUploadSessionMapper;
 import com.qiujie.knowledge.service.KbUploadCompletionHandler;
 import com.qiujie.knowledge.service.KnowledgeService;
 import com.qiujie.knowledge.service.QaService;
 import com.qiujie.service.FileUploadService;
-import com.qiujie.spi.UploadSessionInfo;
 import com.qiujie.util.SecurityUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -47,9 +44,6 @@ public class KnowledgeController {
 
     @Autowired
     private SecurityUtil securityUtil;
-
-    @Autowired
-    private KbUploadSessionMapper sessionMapper;
 
     // ==================== 文档管理 ====================
 
@@ -148,27 +142,14 @@ public class KnowledgeController {
     @PostMapping("/upload")
     @PreAuthorize("hasAnyAuthority('system:docs:upload')")
     public ResponseDTO createFromUpload(@RequestParam String uploadId) {
-        KbUploadSession session = sessionMapper.selectById(uploadId);
-        if (session == null || session.getMergedObjectKey() == null) {
+        Map<String, Object> extra = kbHandler.completeFromUpload(uploadId);
+        if (extra == null) {
             return Response.error("上传会话不存在或文件未完成上传");
         }
-        UploadSessionInfo info = new UploadSessionInfo(
-                session.getUploadId(), session.getFileName(), session.getFileExt(),
-                session.getFileSize(), session.getFileHash(),
-                session.getStaffId(), session.getChunkCount());
-        Map<String, Object> extra = kbHandler.onComplete(session.getMergedObjectKey(), info);
         return Response.success("文档已提交处理", extra);
     }
 
     // ==================== RAG 问答 ====================
-
-    /**
-     * 同步 RAG 问答：检索知识库 → LLM 生成回答 → 返回引用来源。
-     */
-    @PostMapping("/qa/ask")
-    public ResponseDTO ask(@RequestBody QaRequest request) {
-        return qaService.ask(request);
-    }
 
     /**
      * SSE 流式 RAG 问答，逐 token 推送生成结果和引用来源。

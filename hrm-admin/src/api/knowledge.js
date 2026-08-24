@@ -27,11 +27,6 @@ export const chunks = (id) => {
   return request({ url: url + '/' + id + '/chunks' })
 }
 
-// Q&A - 同步问答
-export const ask = (data) => {
-  return request({ url: url + '/qa/ask', method: 'post', data })
-}
-
 // Q&A - SSE 流式问答（POST，不能用 EventSource，用 fetch + ReadableStream）
 export const streamAsk = (question, strategy, callbacks) => {
   const baseUrl = process.env.VUE_APP_BASE_API || ''

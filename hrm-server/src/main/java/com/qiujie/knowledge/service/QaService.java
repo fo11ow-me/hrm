@@ -3,7 +3,6 @@ package com.qiujie.knowledge.service;
 import cn.hutool.core.util.IdUtil;
 import com.alibaba.fastjson.JSON;
 import com.qiujie.knowledge.spi.KnowledgeSearchProvider.SearchResult;
-import com.qiujie.dto.ResponseDTO;
 import com.qiujie.knowledge.dto.QaRequest;
 import com.qiujie.knowledge.dto.QaResponse;
 import com.qiujie.knowledge.enums.EvidenceLevel;
@@ -12,20 +11,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import javax.sql.DataSource;
-import java.io.IOException;
 import java.util.*;
-import org.springframework.security.core.Authentication;
 import java.util.stream.Collectors;
 
 /**
- * 知识库 RAG 问答编排服务。
+ * 知识库 RAG 问答编排服务（SSE 流式）。
  * 查询规划 → 混合检索 → 证据评估 → LLM 生成 → 引用溯源
+ * <p>
+ * 同步回答已移除，本服务仅保留 SSE 流式入口。
+ * </p>
  */
 @Service
 public class QaService {
@@ -45,108 +47,87 @@ public class QaService {
     private SecurityUtil securityUtil;
 
     private final ChatClient chatClient;
-
-    public QaService(ChatClient.Builder chatClientBuilder,
-                     @Autowired(required = false) @org.springframework.beans.factory.annotation.Qualifier("kbDataSource") DataSource kbDataSource) {
-        this.chatClient = chatClientBuilder.build();
-        this.kbJdbc = kbDataSource != null ? new JdbcTemplate(kbDataSource) : null;
-    }
-
     private final JdbcTemplate kbJdbc;
+    private final ThreadPoolTaskExecutor fileTaskExecutor;
 
     @Value("${knowledge.qa.max-context-chars:3000}")
     private int maxContextChars;
 
-    /**
-     * 问答入口。
-     */
-    public ResponseDTO ask(QaRequest request) {
-        String question = request.getQuestion();
-        if (question == null || question.isBlank()) {
-            return com.qiujie.dto.Response.error("问题不能为空");
-        }
-
-        // 1. 查询规划
-        var plan = planningService.plan(question, request.getStrategy());
-        log.info("QA plan: strategy={}, queries={}", plan.strategy(), plan.queries());
-
-        // 2. 混合检索
-        List<SearchResult> results = retrievalService.search(plan.queries());
-
-        // 3. 证据评估
-        var assessment = evidenceService.assess(results);
-
-        // 4. 构建上下文 + LLM 生成
-        String answer;
-        if (assessment.level() == EvidenceLevel.NONE) {
-            answer = "抱歉，知识库中暂未找到与您问题相关的信息。建议查阅相关制度文件或联系管理员补充资料。";
-        } else {
-            answer = generateAnswer(question, results, assessment);
-        }
-
-        // 5. 构建引用
-        List<QaResponse.CitationVO> citations = buildCitations(results);
-
-        // 6. 构建响应
-        QaResponse response = new QaResponse();
-        response.setAnswer(answer);
-        response.setEvidenceLevel(assessment.level().name());
-        response.setStrategy(plan.strategy());
-        response.setCitations(citations);
-        response.setConversationId(IdUtil.fastSimpleUUID());
-
-        // 7. 持久化 QA 记录
-        saveQaRecord(question, answer, assessment.level().name(), citations);
-
-        return com.qiujie.dto.Response.success(response);
+    public QaService(ChatClient.Builder chatClientBuilder,
+                     @Autowired(required = false) @Qualifier("kbDataSource") DataSource kbDataSource,
+                     @Qualifier("fileTaskExecutor") ThreadPoolTaskExecutor fileTaskExecutor) {
+        this.chatClient = chatClientBuilder.build();
+        this.kbJdbc = kbDataSource != null ? new JdbcTemplate(kbDataSource) : null;
+        this.fileTaskExecutor = fileTaskExecutor;
     }
 
     /**
-     * SSE 流式问答。捕获当前线程安全上下文传入后台线程。
+     * SSE 流式问答——RAG 流水线在线程池中异步执行，逐 token 推送。
      */
     public SseEmitter streamAsk(QaRequest request) {
-        SseEmitter emitter = new SseEmitter(300000L);
-        Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-
-        new Thread(() -> {
-            org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
+        SseEmitter emitter = new SseEmitter(300_000L);
+        String question = request.getQuestion();
+        if (question == null || question.isBlank()) {
             try {
-                ResponseDTO result = ask(request);
-                QaResponse qa = (QaResponse) result.getData();
+                emitter.send(SseEmitter.event().name("meta")
+                        .data(Map.of("error", "问题不能为空")));
+            } catch (Exception ignored) {}
+            emitter.complete();
+            return emitter;
+        }
 
-                if (qa != null) {
-                    // 流式发送 token
-                    String answer = qa.getAnswer();
-                    for (int i = 0; i < answer.length(); i += 3) {
-                        String chunk = answer.substring(i, Math.min(i + 3, answer.length()));
-                        emitter.send(SseEmitter.event().name("token").data(chunk));
-                    }
+        fileTaskExecutor.execute(() -> {
+            try {
+                // 1. 查询规划
+                var plan = planningService.plan(question, request.getStrategy());
+                log.info("QA plan: strategy={}, queries={}", plan.strategy(), plan.queries());
 
-                    // 发送引用和元数据
-                    emitter.send(SseEmitter.event().name("citations").data(JSON.toJSONString(qa.getCitations())));
-                    Map<String, Object> meta = new HashMap<>();
-                    meta.put("evidenceLevel", qa.getEvidenceLevel());
-                    meta.put("strategy", qa.getStrategy());
-                    meta.put("conversationId", qa.getConversationId());
-                    emitter.send(SseEmitter.event().name("meta").data(meta));
+                // 2. 混合检索
+                List<SearchResult> results = retrievalService.search(plan.queries());
+
+                // 3. 证据评估
+                var assessment = evidenceService.assess(results);
+
+                // 4. 构建上下文 + LLM 生成
+                String answer;
+                if (assessment.level() == EvidenceLevel.NONE) {
+                    answer = "抱歉，知识库中暂未找到与您问题相关的信息。建议查阅相关制度文件或联系管理员补充资料。";
+                } else {
+                    answer = generateAnswer(question, results, assessment);
                 }
+
+                // 5. 构建引用
+                List<QaResponse.CitationVO> citations = buildCitations(results);
+
+                // 6. 流式推送 token
+                for (int i = 0; i < answer.length(); i += 3) {
+                    String chunk = answer.substring(i, Math.min(i + 3, answer.length()));
+                    emitter.send(SseEmitter.event().name("token").data(chunk));
+                }
+
+                // 7. 推送引用和元数据
+                emitter.send(SseEmitter.event().name("citations").data(JSON.toJSONString(citations)));
+                Map<String, Object> meta = new HashMap<>();
+                meta.put("evidenceLevel", assessment.level().name());
+                meta.put("strategy", plan.strategy());
+                meta.put("conversationId", IdUtil.fastSimpleUUID());
+                emitter.send(SseEmitter.event().name("meta").data(meta));
+
+                // 8. 持久化 QA 记录
+                saveQaRecord(question, answer, assessment.level().name(), citations);
+
                 emitter.complete();
-            } catch (IOException e) {
-                emitter.completeWithError(e);
             } catch (Exception e) {
                 log.error("SSE stream error", e);
                 emitter.completeWithError(e);
-            } finally {
-                org.springframework.security.core.context.SecurityContextHolder.clearContext();
             }
-        }).start();
+        });
 
         return emitter;
     }
 
     private String generateAnswer(String question, List<SearchResult> results,
                                    EvidenceAssessmentService.Assessment assessment) {
-        // 构建参考资料上下文
         List<Map<String, String>> references = new ArrayList<>();
         StringBuilder context = new StringBuilder();
         int charCount = 0;
@@ -232,7 +213,7 @@ public class QaService {
                     "INSERT INTO kb_qa_record (question, answer, staff_id, evidence_level,"
                     + " answered, citation_count, endpoint, success) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     question, answer, staffId, evidenceLevel,
-                    answered, citationCount, "qa/ask", true);
+                    answered, citationCount, "qa/stream", true);
         } catch (Exception e) {
             log.warn("Failed to save QA record", e);
         }
