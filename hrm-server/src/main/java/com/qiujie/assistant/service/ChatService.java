@@ -2,23 +2,16 @@ package com.qiujie.assistant.service;
 
 import com.qiujie.assistant.ChatTools;
 import com.qiujie.assistant.dto.ChatRequest;
-import com.qiujie.assistant.entity.ChatMessage;
 import com.qiujie.assistant.entity.ChatSession;
+import com.qiujie.assistant.llm.AssistantLlm;
 import com.qiujie.assistant.store.ChatSessionStore;
 import com.qiujie.util.SecurityUtil;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -29,8 +22,8 @@ import java.util.List;
  * <ul>
  *   <li>会话 CRUD + 游标分页 → {@link ChatSessionStore}</li>
  *   <li>会话记忆（L1/L2/L3 压缩、token 截断）→ {@link ConversationContextFactory} + {@link ConversationContext}</li>
- *   <li>LLM 调用与 Prompt 构建 → 本类（内联）</li>
- *   <li>SSE 推送与回复落库 → {@link ChatSsePublisher}</li>
+ *   <li>LLM 调用与 Prompt 构建 → {@link com.qiujie.assistant.llm.AssistantLlm}（领域端口）</li>
+ *   <li>SSE 推送 → {@link ChatSsePublisher}</li>
  * </ul>
  * </p>
  *
@@ -39,24 +32,22 @@ import java.util.List;
 @Service
 public class ChatService {
 
-    private static final Logger log = LoggerFactory.getLogger(ChatService.class);
-
     private final ChatSessionStore sessionStore;
     private final ConversationContextFactory contextFactory;
-    private final ChatClient chatClient;
+    private final AssistantLlm llm;
     private final ChatTools chatTools;
     private final ChatSsePublisher ssePublisher;
     private final SecurityUtil securityUtil;
 
     public ChatService(ChatSessionStore sessionStore,
                        ConversationContextFactory contextFactory,
-                       ChatClient.Builder chatClientBuilder,
+                       AssistantLlm llm,
                        ChatTools chatTools,
                        ChatSsePublisher ssePublisher,
                        SecurityUtil securityUtil) {
         this.sessionStore = sessionStore;
         this.contextFactory = contextFactory;
-        this.chatClient = chatClientBuilder.build();
+        this.llm = llm;
         this.chatTools = chatTools;
         this.ssePublisher = ssePublisher;
         this.securityUtil = securityUtil;
@@ -82,14 +73,15 @@ public class ChatService {
         // 2. 准备 LLM 上下文（L1/L2 记忆 + L3 截断，聚合根内部完成）
         LlmContext llmCtx = ctx.prepareLlmContext(request.getMessage());
 
-        // 3. 调用 LLM
+        // 3. 调用 LLM——失败降级语义在 {@link AssistantLlm} 内收口（返回 null）
         String answer = callLlm(request, llmCtx);
 
-        // 4. 异步 SSE 推送 + 落库（线程池执行，不阻塞主线程）
+        // 4. 记录回复（先落库）→ 异步 SSE 推送（后推送）
+        //    先落库后推送：回答与记忆先于推送持久化，避免事务回滚时 SSE 已发送
+        //    （前端已收到内容但库里没有）的时序竞态。
+        ctx.recordResponse(answer, ctx.mode());
         ssePublisher.push(emitter, answer, ctx.sessionId(), auth);
 
-        // 5. 记录回复——持久化助手消息 + 触发记忆更新
-        ctx.recordResponse(answer, ctx.mode());
         return emitter;
     }
 
@@ -122,23 +114,12 @@ public class ChatService {
 
     // ==================== 私有 ====================
 
-    /** 调用 LLM，失败时降级为兜底提示（不阻断流程）。 */
+    /** 调用 LLM——失败/空白降级为兜底提示（不阻断流程）。 */
     private String callLlm(ChatRequest request, LlmContext llmCtx) {
-        try {
-            var prompt = chatClient.prompt()
-                    .messages(llmCtx.historyMessages())
-                    .user(request.getMessage())
-                    .tools(chatTools);
-            if (llmCtx.hasMemory()) {
-                prompt = prompt.system(s -> s.text(llmCtx.systemContext()));
-            }
-            String answer = prompt.call().content();
-            return (answer == null || answer.isBlank())
-                    ? "抱歉，未能生成回复，请稍后重试。"
-                    : answer;
-        } catch (Exception e) {
-            log.error("LLM call failed: sessionId={}", request.getSessionId(), e);
-            return "抱歉，AI 服务暂时不可用，请稍后重试。";
-        }
+        String answer = llm.chat(llmCtx.historyMessages(), request.getMessage(),
+                llmCtx.systemContext(), chatTools);
+        return (answer == null || answer.isBlank())
+                ? "抱歉，AI 服务暂时不可用，请稍后重试。"
+                : answer;
     }
 }

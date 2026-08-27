@@ -1,10 +1,7 @@
 package com.qiujie.assistant.memory;
 
 import com.qiujie.assistant.entity.ChatMessage;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.prompt.Prompt;
+import com.qiujie.assistant.llm.AssistantLlm;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -13,42 +10,40 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * LLM 驱动的记忆摘要生成器，提供 L1/L2/L3 三级摘要能力。
+ * LLM 驱动的记忆摘要生成器，提供 L1/L2 两级摘要能力。
  * <ul>
  *   <li>L1 — 会话记忆更新（session memory update）</li>
  *   <li>L2 — 紧凑摘要生成（compact summary）</li>
- *   <li>L3 — 运行时上下文压缩（runtime compact）</li>
  * </ul>
+ * <p>
+ * L3 运行时上下文压缩（runtime compact）已于 2026-08 移除——该能力从未被
+ * 调用（零调用方，仅定义于 Prompt 配置），运行时截断统一由
+ * {@code ConversationContext.truncateIfNeeded()} 完成。
+ * </p>
  *
  * @author qiujie
  */
 @Component
 public class ChatMemorySummarizer {
 
-    private static final Logger log = LoggerFactory.getLogger(ChatMemorySummarizer.class);
-
-    private final ChatClient chatClient;
+    private final AssistantLlm llm;
     private final PromptTemplate sessionMemoryPromptTemplate;
     private final PromptTemplate compactSummaryPromptTemplate;
-    private final PromptTemplate runtimeCompactPromptTemplate;
 
     /**
-     * 构造注入所需的 ChatClient 和三个 PromptTemplate Bean。
+     * 构造注入 LLM 边界与两个 PromptTemplate Bean。
      *
-     * @param chatClientBuilder          ChatClient 构建器
+     * @param llm                         LLM 调用边界
      * @param sessionMemoryPromptTemplate L1 会话记忆更新模板
      * @param compactSummaryPromptTemplate L2 紧凑摘要模板
-     * @param runtimeCompactPromptTemplate L3 运行时上下文压缩模板
      */
     public ChatMemorySummarizer(
-            ChatClient.Builder chatClientBuilder,
+            AssistantLlm llm,
             @Qualifier("assistantSessionMemoryPromptTemplate") PromptTemplate sessionMemoryPromptTemplate,
-            @Qualifier("assistantCompactSummaryPromptTemplate") PromptTemplate compactSummaryPromptTemplate,
-            @Qualifier("assistantRuntimeCompactPromptTemplate") PromptTemplate runtimeCompactPromptTemplate) {
-        this.chatClient = chatClientBuilder.build();
+            @Qualifier("assistantCompactSummaryPromptTemplate") PromptTemplate compactSummaryPromptTemplate) {
+        this.llm = llm;
         this.sessionMemoryPromptTemplate = sessionMemoryPromptTemplate;
         this.compactSummaryPromptTemplate = compactSummaryPromptTemplate;
-        this.runtimeCompactPromptTemplate = runtimeCompactPromptTemplate;
     }
 
     /**
@@ -61,7 +56,7 @@ public class ChatMemorySummarizer {
      */
     public String summarizeSessionMemory(
             String existingSessionMemory, List<ChatMessage> newMessages, String toolMode) {
-        return callForText(sessionMemoryPromptTemplate.create(Map.of(
+        return llm.summarize(sessionMemoryPromptTemplate.create(Map.of(
                 "existingSessionMemory", defaultText(existingSessionMemory),
                 "newMessages", formatMessages(newMessages),
                 "currentToolMode", defaultText(toolMode),
@@ -80,29 +75,10 @@ public class ChatMemorySummarizer {
      */
     public String summarizeCompactSummary(
             String existingCompactSummary, List<ChatMessage> newMessages, String toolMode) {
-        return callForText(compactSummaryPromptTemplate.create(Map.of(
+        return llm.summarize(compactSummaryPromptTemplate.create(Map.of(
                 "existingCompactSummary", defaultText(existingCompactSummary),
                 "newMessages", formatMessages(newMessages),
                 "currentToolMode", defaultText(toolMode)
-        )));
-    }
-
-    /**
-     * L3: 在运行时将紧凑摘要、会话记忆、最近消息与当前问题合并，生成轻量上下文。
-     *
-     * @param compactSummary  紧凑摘要
-     * @param sessionMemory   会话记忆
-     * @param recentMessages  最近消息文本
-     * @param currentQuestion 当前用户问题
-     * @return 运行时上下文文本
-     */
-    public String summarizeRuntimeContext(
-            String compactSummary, String sessionMemory, String recentMessages, String currentQuestion) {
-        return callForText(runtimeCompactPromptTemplate.create(Map.of(
-                "compactSummary", defaultText(compactSummary),
-                "sessionMemory", defaultText(sessionMemory),
-                "recentMessages", defaultText(recentMessages),
-                "currentQuestion", defaultText(currentQuestion)
         )));
     }
 
@@ -127,26 +103,6 @@ public class ChatMemorySummarizer {
             sb.append('[').append(defaultText(m.getRole())).append("] ").append(m.getContent().trim());
         }
         return sb.isEmpty() ? "NONE" : sb.toString();
-    }
-
-    /**
-     * 调用 LLM 生成文本。
-     *
-     * @param prompt Prompt 对象
-     * @return LLM 返回的文本，失败时返回空字符串
-     */
-    private String callForText(Prompt prompt) {
-        try {
-            String content = chatClient.prompt(prompt).call().content();
-            if (content == null || content.isBlank()) {
-                log.warn("Memory summarizer returned empty content");
-                return "";
-            }
-            return content.replace("\r\n", "\n").trim();
-        } catch (Exception e) {
-            log.warn("Memory summarizer call failed: {}", e.getMessage());
-            return "";
-        }
     }
 
     /**
