@@ -10,13 +10,11 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.qiujie.enums.TaskModuleEnum;
-import com.qiujie.enums.TaskTypeEnum;
 import com.qiujie.dto.AttendanceImportRow;
 import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
 import com.qiujie.entity.Attendance;
 import com.qiujie.entity.Dept;
-import com.qiujie.entity.FileTask;
 import com.qiujie.entity.FileTaskError;
 import com.qiujie.entity.Staff;
 import com.qiujie.enums.AttendanceStatusEnum;
@@ -32,7 +30,6 @@ import com.qiujie.vo.AttendanceMonthSummaryVO;
 import com.qiujie.vo.AttendanceMonthVO;
 import com.qiujie.vo.StaffAttendanceVO;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -48,10 +45,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -76,19 +71,13 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
     private DatetimeUtil datetimeUtil;
 
     @Autowired
-    private FileTaskService fileTaskService;
-
-    @Autowired
     private FileTaskErrorService fileTaskErrorService;
 
     @Autowired
     private TransactionTemplate transactionTemplate;
 
     @Autowired
-    private ThreadPoolTaskExecutor fileTaskExecutor;
-
-    @Autowired
-    private FileTaskEngine fileTaskEngine;
+    private FileTaskCoordinator fileTaskCoordinator;
 
     @Autowired
     private FileUploadService fileUploadService;
@@ -259,16 +248,15 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
     // 通过三阶段上传完成后创建异步导入任务
     public ResponseDTO createImportTask(String uploadId) {
         String mergedKey = fileUploadService.completeUpload(uploadId);
-        FileTask fileTask = fileTaskService.createTask(
-                TaskTypeEnum.IMPORT,
-                TaskModuleEnum.ATTENDANCE,
-                "attendance_import.xlsx",
-                mergedKey,
-                null,
-                getCurrentOperatorId()
-        );
-        fileTaskExecutor.execute(() -> runImportTask(fileTask.getId()));
-        return Response.success("导入任务已创建", fileTask);
+        FileTaskCoordinator.TaskSubmission submission = fileTaskCoordinator.submitImport(
+                new FileTaskCoordinator.ImportCommand(
+                        TaskModuleEnum.ATTENDANCE,
+                        "attendance_import.xlsx",
+                        mergedKey,
+                        null,
+                        getCurrentOperatorId()),
+                new AttendanceImportHandler());
+        return Response.success("导入任务已创建", submission.snapshot());
     }
 
     // ==================== 异步导出入口 ====================
@@ -282,18 +270,14 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
         }
         Map<String, Object> queryParams = new HashMap<>();
         queryParams.put("month", month);
-        FileTask fileTask = fileTaskService.createTask(
-                TaskTypeEnum.EXPORT,
-                TaskModuleEnum.ATTENDANCE,
-                exportName,
-                null,
-                JSON.toJSONString(queryParams),
-                getCurrentOperatorId()
-        );
-        String finalMonth = month;
-        String finalExportName = exportName;
-        fileTaskExecutor.execute(() -> runExportTask(fileTask.getId(), finalMonth, finalExportName));
-        return Response.success("导出任务已创建", fileTask);
+        FileTaskCoordinator.TaskSubmission submission = fileTaskCoordinator.submitExport(
+                new FileTaskCoordinator.ExportCommand(
+                        TaskModuleEnum.ATTENDANCE,
+                        exportName,
+                        JSON.toJSONString(queryParams),
+                        getCurrentOperatorId()),
+                new AttendanceExportHandler());
+        return Response.success("导出任务已创建", submission.snapshot());
     }
 
     public ResponseDTO setAttendance(Attendance attendance) {
@@ -326,124 +310,26 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
         return Response.error();
     }
 
-    // ==================== 异步导入核心 ====================
-    // 委托给 FileTaskEngine 执行，考勤特有的校验逻辑由 AttendanceImportHandler 提供
-    private void runImportTask(Long taskId) {
-        fileTaskEngine.runImport(taskId, new AttendanceImportHandler());
+    private AttendanceImportBatchProcessor importBatchProcessor() {
+        return new AttendanceImportBatchProcessor(attendanceMapper, deptMapper, staffMapper, transactionTemplate);
     }
 
-    // ==================== 异步导出核心 ====================
-    // 委托给 FileTaskEngine 执行，考勤特有的分页查询由 AttendanceExportHandler 提供
-    private void runExportTask(Long taskId, String month, String exportName) {
-        FileTask task = fileTaskService.getById(taskId);
-        String queryParamsJson = task != null ? task.getQueryParams() : "{\"month\":\"" + month + "\"}";
-        fileTaskEngine.runExport(taskId, new AttendanceExportHandler(), queryParamsJson, exportName);
-    }
-
-    // ==================== 批量处理 ====================
     // 三步走：① 批量查询本批次涉及的员工/部门/已有考勤
     //        ② 逐行校验 + 计算考勤状态（迟到/早退/旷工/正常）
     //        ③ 批量 saveOrUpdate + 批量记录错误
     // 关键：先批量查再逐行判，避免每行一次 DB 查询
     ImportBatchResult processImportRows(List<AttendanceImportRow> rows, Long taskId, boolean persistTaskError) {
-        ImportBatchResult result = new ImportBatchResult();
-        if (rows.isEmpty()) {
-            return result;
-        }
-        // ① 批量查询——从本批行中提取 ID 集合，一次性查出所有相关数据，避免 N+1
-        Set<Integer> staffIds = rows.stream()
-                .map(AttendanceImportRow::getStaffId)
-                .filter(item -> item != null)
-                .collect(Collectors.toSet());
-        Map<Integer, Staff> staffMap = staffIds.isEmpty()
-                ? new HashMap<>()
-                : this.staffMapper.selectBatchIds(staffIds).stream().collect(Collectors.toMap(Staff::getId, item -> item));
-        Set<Integer> deptIds = staffMap.values().stream()
-                .map(Staff::getDeptId)
-                .filter(item -> item != null)
-                .collect(Collectors.toSet());
-        Map<Integer, Dept> deptMap = deptIds.isEmpty()
-                ? new HashMap<>()
-                : this.deptMapper.selectBatchIds(deptIds).stream().collect(Collectors.toMap(Dept::getId, item -> item));
-        Set<Date> attendanceDates = rows.stream()
-                .map(AttendanceImportRow::getAttendanceDate)
-                .filter(item -> item != null)
-                .map(this::toSqlDate)
-                .collect(Collectors.toCollection(HashSet::new));
-        // 查出已有考勤记录（同一员工同一天只留一条，防止重复导入）
-        Map<String, Attendance> existingMap = new HashMap<>();
-        if (!staffIds.isEmpty() && !attendanceDates.isEmpty()) {
-            existingMap = this.attendanceMapper.queryByStaffIdsAndDates(staffIds, attendanceDates).stream()
-                    .collect(Collectors.toMap(this::buildAttendanceKey, item -> item, (left, right) -> left));
-        }
-
-        // ② 逐行校验
-        List<Attendance> saveList = new ArrayList<>();
         List<FileTaskError> errors = new ArrayList<>();
-        for (AttendanceImportRow row : rows) {
-            String rowData = buildRowData(row);
-            if (row.getStaffId() == null) {
-                errors.add(buildTaskError(taskId, resolveRowNum(row), rowData, "员工id不能为空"));
-                continue;
-            }
-            if (row.getAttendanceDate() == null) {
-                errors.add(buildTaskError(taskId, resolveRowNum(row), rowData, "考勤日期不能为空"));
-                continue;
-            }
-            Staff staff = staffMap.get(row.getStaffId());
-            if (staff == null) {
-                errors.add(buildTaskError(taskId, resolveRowNum(row), rowData, "员工不存在"));
-                continue;
-            }
-            Dept dept = deptMap.get(staff.getDeptId());
-            if (dept == null) {
-                errors.add(buildTaskError(taskId, resolveRowNum(row), rowData, "员工部门不存在"));
-                continue;
-            }
-            Attendance attendance = convertAttendance(row);
-            // 周末不需要考勤
-            if (DateUtil.isWeekend(attendance.getAttendanceDate())) {
-                result.successCount++;
-                continue;
-            }
-            // 已存在休假/调休记录，不覆盖
-            Attendance existing = existingMap.get(buildAttendanceKey(attendance));
-            if (existing != null && (existing.getStatus() == AttendanceStatusEnum.LEAVE || existing.getStatus() == AttendanceStatusEnum.TIME_OFF)) {
-                result.successCount++;
-                continue;
-            }
-            // 已有记录则需要基于原 ID 做 update 而非 insert
-            if (existing != null) {
-                attendance.setId(existing.getId());
-            }
-            // 对比部门上班时间来判定考勤状态
-            if (isAbsenteeism(attendance, dept)) {
-                attendance.setStatus(AttendanceStatusEnum.ABSENTEEISM);
-            } else if (isLate(attendance, dept)) {
-                attendance.setStatus(AttendanceStatusEnum.LATE);
-            } else if (isLeaveEarly(attendance, dept)) {
-                attendance.setStatus(AttendanceStatusEnum.LEAVE_EARLY);
-            } else {
-                attendance.setStatus(AttendanceStatusEnum.NORMAL);
-            }
-            saveList.add(attendance);
-        }
-
-        // ③ 批量写入——每 200 行一个事务，避免大事务锁表
-        if (!saveList.isEmpty()) {
-            transactionTemplate.executeWithoutResult(status -> saveOrUpdateBatch(saveList, DB_BATCH_SIZE));
-            result.successCount += saveList.size();
-        }
-        if (!errors.isEmpty() && persistTaskError) {
+        AttendanceImportBatchProcessor.Result processed = importBatchProcessor().process(
+                rows, taskId, errors::add);
+        if (persistTaskError && !errors.isEmpty()) {
             fileTaskErrorService.saveBatch(errors, DB_BATCH_SIZE);
         }
-        result.failCount += errors.size();
-        result.totalCount = rows.size();
-        result.processedCount = rows.size();
-        // 原子更新进度，触发 SSE 推送
-        if (taskId > 0) {
-            fileTaskService.increaseProgress(taskId, result.totalCount, result.processedCount, result.successCount, result.failCount);
-        }
+        ImportBatchResult result = new ImportBatchResult();
+        result.totalCount = processed.totalCount;
+        result.processedCount = processed.processedCount;
+        result.successCount = processed.successCount;
+        result.failCount = processed.failCount;
         return result;
     }
 
@@ -557,89 +443,7 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
 
         @Override
         public void processBatch(List<AttendanceImportRow> rows, Long taskId, Consumer<FileTaskError> errorCollector) {
-            if (rows.isEmpty()) {
-                return;
-            }
-            // ① 批量预加载关联数据，避免 N+1
-            Set<Integer> staffIds = rows.stream()
-                    .map(AttendanceImportRow::getStaffId)
-                    .filter(item -> item != null)
-                    .collect(Collectors.toSet());
-            Map<Integer, Staff> staffMap = staffIds.isEmpty()
-                    ? new HashMap<>()
-                    : AttendanceService.this.staffMapper.selectBatchIds(staffIds).stream()
-                    .collect(Collectors.toMap(Staff::getId, item -> item));
-            Set<Integer> deptIds = staffMap.values().stream()
-                    .map(Staff::getDeptId)
-                    .filter(item -> item != null)
-                    .collect(Collectors.toSet());
-            Map<Integer, Dept> deptMap = deptIds.isEmpty()
-                    ? new HashMap<>()
-                    : AttendanceService.this.deptMapper.selectBatchIds(deptIds).stream()
-                    .collect(Collectors.toMap(Dept::getId, item -> item));
-            Set<Date> attendanceDates = rows.stream()
-                    .map(AttendanceImportRow::getAttendanceDate)
-                    .filter(item -> item != null)
-                    .map(AttendanceService.this::toSqlDate)
-                    .collect(Collectors.toCollection(HashSet::new));
-            Map<String, Attendance> existingMap = new HashMap<>();
-            if (!staffIds.isEmpty() && !attendanceDates.isEmpty()) {
-                existingMap = AttendanceService.this.attendanceMapper
-                        .queryByStaffIdsAndDates(staffIds, attendanceDates).stream()
-                        .collect(Collectors.toMap(AttendanceService.this::buildAttendanceKey, item -> item, (left, right) -> left));
-            }
-
-            // ② 逐行校验 + 状态判定
-            List<Attendance> saveList = new ArrayList<>();
-            for (AttendanceImportRow row : rows) {
-                String rowData = buildRowData(row);
-                int rowNum = resolveRowNum(row);
-                if (row.getStaffId() == null) {
-                    errorCollector.accept(buildTaskError(taskId, rowNum, rowData, "员工id不能为空"));
-                    continue;
-                }
-                if (row.getAttendanceDate() == null) {
-                    errorCollector.accept(buildTaskError(taskId, rowNum, rowData, "考勤日期不能为空"));
-                    continue;
-                }
-                Staff staff = staffMap.get(row.getStaffId());
-                if (staff == null) {
-                    errorCollector.accept(buildTaskError(taskId, rowNum, rowData, "员工不存在"));
-                    continue;
-                }
-                Dept dept = deptMap.get(staff.getDeptId());
-                if (dept == null) {
-                    errorCollector.accept(buildTaskError(taskId, rowNum, rowData, "员工部门不存在"));
-                    continue;
-                }
-                Attendance attendance = convertAttendance(row);
-                if (DateUtil.isWeekend(attendance.getAttendanceDate())) {
-                    continue;
-                }
-                Attendance existing = existingMap.get(buildAttendanceKey(attendance));
-                if (existing != null && (existing.getStatus() == AttendanceStatusEnum.LEAVE
-                        || existing.getStatus() == AttendanceStatusEnum.TIME_OFF)) {
-                    continue;
-                }
-                if (existing != null) {
-                    attendance.setId(existing.getId());
-                }
-                if (isAbsenteeism(attendance, dept)) {
-                    attendance.setStatus(AttendanceStatusEnum.ABSENTEEISM);
-                } else if (isLate(attendance, dept)) {
-                    attendance.setStatus(AttendanceStatusEnum.LATE);
-                } else if (isLeaveEarly(attendance, dept)) {
-                    attendance.setStatus(AttendanceStatusEnum.LEAVE_EARLY);
-                } else {
-                    attendance.setStatus(AttendanceStatusEnum.NORMAL);
-                }
-                saveList.add(attendance);
-            }
-
-            // ③ 批量写入——每 200 行一个事务
-            if (!saveList.isEmpty()) {
-                transactionTemplate.executeWithoutResult(status -> saveOrUpdateBatch(saveList, DB_BATCH_SIZE));
-            }
+            importBatchProcessor().process(rows, taskId, errorCollector);
         }
     }
 

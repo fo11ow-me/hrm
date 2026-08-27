@@ -51,9 +51,6 @@ class AttendanceServiceUnitTest {
     private TransactionTemplate transactionTemplate;
 
     @Mock
-    private FileTaskService fileTaskService;
-
-    @Mock
     private FileTaskErrorService fileTaskErrorService;
 
     @Mock
@@ -75,7 +72,6 @@ class AttendanceServiceUnitTest {
         ReflectionTestUtils.setField(attendanceService, "staffMapper", staffMapper);
         ReflectionTestUtils.setField(attendanceService, "deptMapper", deptMapper);
         ReflectionTestUtils.setField(attendanceService, "transactionTemplate", transactionTemplate);
-        ReflectionTestUtils.setField(attendanceService, "fileTaskService", fileTaskService);
         ReflectionTestUtils.setField(attendanceService, "fileTaskErrorService", fileTaskErrorService);
         ReflectionTestUtils.setField(attendanceService, "securityUtil", securityUtil);
 

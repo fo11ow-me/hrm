@@ -43,7 +43,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
-public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
+public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask>
+        implements FileTaskRuntimePort {
 
     private static final int ERROR_EXPORT_PAGE_SIZE = 1000;
     private static final String TEMP_DIR = System.getProperty("java.io.tmpdir") + File.separator + "hrm";
@@ -62,6 +63,10 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
 
     @Autowired
     private SecurityUtil securityUtil;
+
+    public FileTask getById(Long id) {
+        return super.getById(id);
+    }
 
     public FileTask createTask(TaskTypeEnum taskType, TaskModuleEnum module, String fileName, String sourceFilePath,
                                String queryParams, Integer operatorId) {
@@ -138,6 +143,17 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask> {
                 .setStatus(TaskStatusEnum.RUNNING)
                 .setStartTime(Timestamp.valueOf(LocalDateTime.now())));
         pushTaskEvent(id);
+    }
+
+    /**
+     * 原子认领待执行任务，避免同一任务被多个线程重复执行。
+     */
+    public boolean claimRunning(Long id) {
+        boolean claimed = fileTaskMapper.claimRunning(id) == 1;
+        if (claimed) {
+            pushTaskEvent(id);
+        }
+        return claimed;
     }
 
     public void increaseProgress(Long id, int total, int processed, int success, int fail) {

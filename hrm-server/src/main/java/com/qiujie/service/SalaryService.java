@@ -6,14 +6,12 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.qiujie.entity.FileTask;
 import com.qiujie.entity.Salary;
 import com.qiujie.entity.SalaryDeduct;
+import com.qiujie.entity.FileTaskError;
 import com.qiujie.enums.AttendanceStatusEnum;
 import com.qiujie.enums.DeductEnum;
 import com.qiujie.enums.TaskModuleEnum;
-import com.qiujie.enums.TaskStatusEnum;
-import com.qiujie.enums.TaskTypeEnum;
 import com.qiujie.mapper.AttendanceMapper;
 import com.qiujie.mapper.SalaryMapper;
 import com.qiujie.dto.Response;
@@ -23,15 +21,12 @@ import com.qiujie.util.EasyExcelUtil;
 import com.qiujie.util.SecurityUtil;
 import com.qiujie.vo.StaffSalaryVO;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -68,17 +63,10 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
     private StaffOvertimeMapper staffOvertimeMapper;
 
     @Autowired
-    private FileTaskService fileTaskService;
+    private FileTaskCoordinator fileTaskCoordinator;
 
     @Autowired
     private FileUploadService fileUploadService;
-
-    @Autowired
-    private com.qiujie.storage.MinioStorageService storageService;
-
-    @Autowired
-    @Qualifier("fileTaskExecutor")
-    private ThreadPoolTaskExecutor fileTaskExecutor;
 
     @Autowired
     private SecurityUtil securityUtil;
@@ -312,11 +300,16 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
      */
     public ResponseDTO createImportTask(String uploadId) {
         String mergedKey = fileUploadService.completeUpload(uploadId);
-        FileTask task = fileTaskService.createTask(TaskTypeEnum.IMPORT, TaskModuleEnum.SALARY,
-                "salary_import.xlsx", mergedKey, null, getCurrentOperatorId());
-        fileTaskExecutor.execute(() -> runImportTask(task.getId()));
+        FileTaskCoordinator.TaskSubmission submission = fileTaskCoordinator.submitImport(
+                new FileTaskCoordinator.ImportCommand(
+                        TaskModuleEnum.SALARY,
+                        "salary_import.xlsx",
+                        mergedKey,
+                        null,
+                        getCurrentOperatorId()),
+                new SalaryImportHandler(this));
         Map<String, Object> result = new HashMap<>();
-        result.put("taskId", task.getId());
+        result.put("taskId", submission.taskId());
         return Response.success(result);
     }
 
@@ -324,59 +317,88 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
      * 创建异步导出任务（支持大文件）
      */
     public ResponseDTO createExportTask(String month, String filename) {
-        FileTask task = fileTaskService.createTask(TaskTypeEnum.EXPORT, TaskModuleEnum.SALARY,
-                filename, null, month, getCurrentOperatorId());
-        fileTaskExecutor.execute(() -> runExportTask(task.getId(), month, filename));
+        FileTaskCoordinator.TaskSubmission submission = fileTaskCoordinator.submitExport(
+                new FileTaskCoordinator.ExportCommand(
+                        TaskModuleEnum.SALARY,
+                        filename,
+                        month,
+                        getCurrentOperatorId()),
+                new SalaryExportHandler(this));
         Map<String, Object> result = new HashMap<>();
-        result.put("taskId", task.getId());
+        result.put("taskId", submission.taskId());
         return Response.success(result);
     }
 
-    private void runImportTask(Long taskId) {
-        try {
-            fileTaskService.markRunning(taskId);
-            FileTask task = fileTaskService.getById(taskId);
-            File sourceFile = resolveImportFile(task.getSourceFilePath());
-            List<Salary> list = EasyExcelUtil.read(new java.io.FileInputStream(sourceFile), 1, Salary.class);
-            fileTaskService.setTotalCount(taskId, list.size());
-            if (saveBatch(list)) {
-                fileTaskService.deleteSourceFile(taskId);
-                fileTaskService.finish(taskId, TaskStatusEnum.SUCCESS);
-            } else {
-                fileTaskService.finish(taskId, TaskStatusEnum.PARTIAL_SUCCESS);
+    private static final class SalaryImportHandler implements ImportProcessor<Salary> {
+
+        private final SalaryService service;
+
+        private SalaryImportHandler(SalaryService service) {
+            this.service = service;
+        }
+
+        @Override
+        public Class<Salary> getRowClass() {
+            return Salary.class;
+        }
+
+        @Override
+        public com.qiujie.enums.TaskModuleEnum getModule() {
+            return com.qiujie.enums.TaskModuleEnum.SALARY;
+        }
+
+        @Override
+        public void processBatch(List<Salary> rows, Long taskId,
+                                 java.util.function.Consumer<com.qiujie.entity.FileTaskError> errorCollector) {
+            try {
+                if (!rows.isEmpty() && !service.saveBatch(rows)) {
+                    for (Salary row : rows) {
+                        errorCollector.accept(new com.qiujie.entity.FileTaskError()
+                                .setTaskId(taskId)
+                                .setRawData(com.alibaba.fastjson.JSON.toJSONString(row))
+                                .setErrorMessage("薪资数据保存失败"));
+                    }
+                }
+            } catch (Exception e) {
+                for (Salary row : rows) {
+                    errorCollector.accept(new com.qiujie.entity.FileTaskError()
+                            .setTaskId(taskId)
+                            .setRawData(com.alibaba.fastjson.JSON.toJSONString(row))
+                            .setErrorMessage(e.getMessage()));
+                }
             }
-        } catch (Exception e) {
-            fileTaskService.fail(taskId, e);
         }
     }
 
-    private File resolveImportFile(String path) {
-        if (path == null || path.contains(File.separator) || path.startsWith("/")) {
-            return new File(path);
-        }
-        File tempFile = new File(fileTaskService.buildTaskFile("task-source", "import.xlsx").getParentFile(), path.replace('/', '_'));
-        tempFile.getParentFile().mkdirs();
-        try (java.io.InputStream in = storageService.get(path)) {
-            cn.hutool.core.io.FileUtil.writeFromStream(in, tempFile);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to download from MinIO: " + path, e);
-        }
-        return tempFile;
-    }
+    private static final class SalaryExportHandler implements ExportProcessor<StaffSalaryVO> {
 
-    private void runExportTask(Long taskId, String month, String filename) {
-        try {
-            fileTaskService.markRunning(taskId);
-            List<StaffSalaryVO> list = salaryMapper.queryStaffSalaryVO();
-            setSalaryInfo(month, list);
-            String exportName = filename != null ? filename : month + "薪资报表";
-            File file = fileTaskService.buildTaskFile("task-result", exportName + ".xlsx");
-            com.alibaba.excel.EasyExcel.write(file, StaffSalaryVO.class).sheet(exportName).doWrite(list);
-            fileTaskService.setTotalCount(taskId, list.size());
-            fileTaskService.setResultFile(taskId, fileTaskService.uploadToMinio(file, "task-result"));
-            fileTaskService.finish(taskId, TaskStatusEnum.SUCCESS);
-        } catch (Exception e) {
-            fileTaskService.fail(taskId, e);
+        private final SalaryService service;
+
+        private SalaryExportHandler(SalaryService service) {
+            this.service = service;
+        }
+
+        @Override
+        public Class<StaffSalaryVO> getRowClass() {
+            return StaffSalaryVO.class;
+        }
+
+        @Override
+        public com.qiujie.enums.TaskModuleEnum getModule() {
+            return com.qiujie.enums.TaskModuleEnum.SALARY;
+        }
+
+        @Override
+        public IPage<StaffSalaryVO> queryPage(int current, int pageSize, String queryParamsJson) {
+            String month = queryParamsJson;
+            List<StaffSalaryVO> all = service.salaryMapper.queryStaffSalaryVO();
+            service.setSalaryInfo(month, all);
+            IPage<StaffSalaryVO> page = new Page<>(current, pageSize);
+            int from = (current - 1) * pageSize;
+            int to = Math.min(from + pageSize, all.size());
+            page.setRecords(from >= all.size() ? java.util.Collections.emptyList() : all.subList(from, to));
+            page.setTotal(all.size());
+            return page;
         }
     }
 

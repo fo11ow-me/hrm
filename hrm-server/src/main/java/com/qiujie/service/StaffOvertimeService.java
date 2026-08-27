@@ -24,10 +24,8 @@ import com.qiujie.mapper.SalaryMapper;
 import com.qiujie.mapper.StaffMapper;
 import com.qiujie.mapper.StaffOvertimeMapper;
 import com.qiujie.util.AiHeaderMatcherImpl;
-import com.qiujie.util.ColumnMappingRegistry;
 import com.qiujie.util.DatetimeUtil;
 import com.qiujie.util.EasyExcelUtil;
-import com.qiujie.util.FlexibleExcelImporter;
 import com.qiujie.util.SecurityUtil;
 import com.qiujie.vo.OvertimeMonthVO;
 import com.qiujie.vo.StaffOvertimeVO;
@@ -39,8 +37,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -78,13 +74,7 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
     private DatetimeUtil datetimeUtil;
 
     @Autowired
-    private FileTaskService fileTaskService;
-
-    @Autowired
-    private FileTaskEngine fileTaskEngine;
-
-    @Autowired
-    private ThreadPoolTaskExecutor fileTaskExecutor;
+    private FileTaskCoordinator fileTaskCoordinator;
 
     @Autowired
     private SecurityUtil securityUtil;
@@ -92,14 +82,8 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
     @Autowired
     private FileUploadService fileUploadService;
 
-    @Autowired
-    private com.qiujie.storage.MinioStorageService storageService;
-
     @Autowired(required = false)
     private AiHeaderMatcherImpl aiHeaderMatcher;
-
-    @Autowired
-    private FileTaskErrorService fileTaskErrorService;
 
     public ResponseDTO add(StaffOvertime staffOvertime) {
         if (save(staffOvertime)) {
@@ -394,85 +378,34 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
 
     public ResponseDTO createImportTask(String uploadId) {
         String mergedKey = fileUploadService.completeUpload(uploadId);
-        FileTask task = fileTaskService.createTask(TaskTypeEnum.IMPORT,
-                TaskModuleEnum.STAFF_OVERTIME, "overtime_import.xlsx",
-                mergedKey, null, securityUtil.getCurrentOperatorId());
-        fileTaskExecutor.execute(() -> runImportTask(task.getId()));
+        FileTaskCoordinator.TaskSubmission submission = fileTaskCoordinator.submitImport(
+                new FileTaskCoordinator.ImportCommand(
+                        TaskModuleEnum.STAFF_OVERTIME,
+                        "overtime_import.xlsx",
+                        mergedKey,
+                        null,
+                        securityUtil.getCurrentOperatorId()),
+                new OvertimeImportHandler(),
+                new FlexibleExcelImportReader<>(2, TaskModuleEnum.STAFF_OVERTIME,
+                        OvertimeImportRow.class, aiHeaderMatcher));
         Map<String, Object> data = new HashMap<>();
-        data.put("taskId", task.getId());
+        data.put("taskId", submission.taskId());
         return Response.success("已提交", data);
     }
 
     public ResponseDTO createExportTask(String month, String filename) {
         Map<String, String> params = new HashMap<>();
         params.put("month", month);
-        FileTask task = fileTaskService.createTask(TaskTypeEnum.EXPORT,
-                TaskModuleEnum.STAFF_OVERTIME, filename, null,
-                JSON.toJSONString(params), securityUtil.getCurrentOperatorId());
-        fileTaskExecutor.execute(() -> runExportTask(task.getId(), month, filename));
+        FileTaskCoordinator.TaskSubmission submission = fileTaskCoordinator.submitExport(
+                new FileTaskCoordinator.ExportCommand(
+                        TaskModuleEnum.STAFF_OVERTIME,
+                        filename,
+                        JSON.toJSONString(params),
+                        securityUtil.getCurrentOperatorId()),
+                new OvertimeExportHandler());
         Map<String, Object> data = new HashMap<>();
-        data.put("taskId", task.getId());
+        data.put("taskId", submission.taskId());
         return Response.success("已提交", data);
-    }
-
-    private void runImportTask(Long taskId) {
-        fileTaskService.markRunning(taskId);
-        FileTask task = fileTaskService.getById(taskId);
-        if (task == null) return;
-
-        try {
-            // 使用 FlexibleExcelImporter：无需 @ExcelProperty 注解，列序无关
-            Map<String, String> mapping = ColumnMappingRegistry.get(TaskModuleEnum.STAFF_OVERTIME);
-            File sourceFile = resolveImportFile(task.getSourceFilePath());
-            List<FlexibleExcelImporter.ImportResult<OvertimeImportRow>> results =
-                    FlexibleExcelImporter.parse(new java.io.FileInputStream(sourceFile),
-                            2, TaskModuleEnum.STAFF_OVERTIME, OvertimeImportRow.class, aiHeaderMatcher);
-
-            List<OvertimeImportRow> buffer = new ArrayList<>(500);
-            int total = results.size(), success = 0, fail = 0;
-            for (FlexibleExcelImporter.ImportResult<OvertimeImportRow> row : results) {
-                if (row.isSuccess() && row.getEntity() != null) {
-                    buffer.add(row.getEntity());
-                    success++;
-                } else {
-                    fail++;
-                    fileTaskErrorService.save(new FileTaskError()
-                            .setTaskId(taskId).setRowNum(row.getRowNum())
-                            .setErrorMessage(row.getError() != null ? row.getError() : "解析失败"));
-                }
-                if (buffer.size() >= 500) {
-                    processOvertimeBatch(buffer, taskId);
-                    buffer.clear();
-                }
-                fileTaskService.increaseProgress(taskId, 0, success + fail, success, fail);
-            }
-            if (!buffer.isEmpty()) {
-                processOvertimeBatch(buffer, taskId);
-            }
-
-            fileTaskService.setTotalCount(taskId, total);
-            if (fail > 0) {
-                fileTaskService.generateErrorFile(taskId);
-                fileTaskService.finish(taskId, TaskStatusEnum.PARTIAL_SUCCESS);
-            } else {
-                fileTaskService.deleteSourceFile(taskId);
-                fileTaskService.finish(taskId, TaskStatusEnum.SUCCESS);
-            }
-        } catch (Exception e) {
-            fileTaskService.fail(taskId, e);
-        }
-    }
-
-    private void processOvertimeBatch(List<OvertimeImportRow> rows, Long taskId) {
-        // 复用 OvertimeImportHandler 的批处理逻辑
-        new OvertimeImportHandler().processBatch(rows, taskId,
-                error -> fileTaskErrorService.save(error));
-    }
-
-    private void runExportTask(Long taskId, String month, String exportName) {
-        Map<String, String> params = new HashMap<>();
-        params.put("month", month);
-        fileTaskEngine.runExport(taskId, new OvertimeExportHandler(), JSON.toJSONString(params), exportName);
     }
 
     class OvertimeImportHandler implements ImportProcessor<OvertimeImportRow> {
@@ -606,19 +539,6 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
         }
     }
 
-    private File resolveImportFile(String path) {
-        if (path == null || path.contains(File.separator) || path.startsWith("/")) {
-            return new File(path);
-        }
-        File tempFile = new File(System.getProperty("java.io.tmpdir") + File.separator + "hrm", path);
-        tempFile.getParentFile().mkdirs();
-        try (java.io.InputStream in = storageService.get(path)) {
-            cn.hutool.core.io.FileUtil.writeFromStream(in, tempFile);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to download from MinIO: " + path, e);
-        }
-        return tempFile;
-    }
 }
 
 

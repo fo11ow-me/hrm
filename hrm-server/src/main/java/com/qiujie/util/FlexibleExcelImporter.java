@@ -57,9 +57,28 @@ public final class FlexibleExcelImporter {
     public static <T> List<ImportResult<T>> parse(InputStream inputStream, int headRow,
                                                     TaskModuleEnum module, Class<T> entityClass,
                                                     AiHeaderMatcher fallback) {
-        FlexibleListener<T> listener = new FlexibleListener<>(headRow, module, entityClass, fallback);
+        List<ImportResult<T>> results = new ArrayList<>();
+        read(inputStream, headRow, module, entityClass, fallback, results::add);
+        return results;
+    }
+
+    /**
+     * 流式解析 Excel，每解析一行立即回调，不保留完整结果列表。
+     *
+     * @param inputStream Excel 文件流
+     * @param headRow 表头行号（从 1 开始）
+     * @param module 导入模块
+     * @param entityClass 目标实体类
+     * @param fallback AI 兜底匹配器，可为 null
+     * @param resultConsumer 单行解析结果回调
+     */
+    public static <T> void read(InputStream inputStream, int headRow,
+                                TaskModuleEnum module, Class<T> entityClass,
+                                AiHeaderMatcher fallback,
+                                java.util.function.Consumer<ImportResult<T>> resultConsumer) {
+        FlexibleListener<T> listener = new FlexibleListener<>(
+                headRow, module, entityClass, fallback, resultConsumer);
         EasyExcel.read(inputStream, listener).sheet().headRowNumber(headRow).doRead();
-        return listener.getResults();
     }
 
     /**
@@ -97,16 +116,18 @@ public final class FlexibleExcelImporter {
         private final TaskModuleEnum module;
         private final Class<T> entityClass;
         private final AiHeaderMatcher fallback;
+        private final java.util.function.Consumer<ImportResult<T>> resultConsumer;
         private final Map<Integer, String> columnIndexToField = new LinkedHashMap<>();
-        private final List<ImportResult<T>> results = new ArrayList<>();
         private int rowCount;
 
         FlexibleListener(int headRow, TaskModuleEnum module, Class<T> entityClass,
-                         AiHeaderMatcher fallback) {
+                         AiHeaderMatcher fallback,
+                         java.util.function.Consumer<ImportResult<T>> resultConsumer) {
             this.headRow = headRow;
             this.module = module;
             this.entityClass = entityClass;
             this.fallback = fallback;
+            this.resultConsumer = resultConsumer;
         }
 
         @Override
@@ -154,22 +175,19 @@ public final class FlexibleExcelImporter {
                     if (rawValue == null || rawValue.trim().isEmpty()) continue;
                     setFieldValue(entity, col.getValue(), rawValue.trim());
                 }
-                results.add(new ImportResult<>(rowCount, entity, null));
+                resultConsumer.accept(new ImportResult<>(rowCount, entity, null));
             } catch (Exception e) {
-                results.add(new ImportResult<>(rowCount, null, e.getMessage()));
+                resultConsumer.accept(new ImportResult<>(rowCount, null, e.getMessage()));
             }
         }
 
         @Override
         public void doAfterAllAnalysed(AnalysisContext ctx) {
-            log.info("导入完成: {} 行, {} 成功, {} 失败",
-                    rowCount,
-                    results.stream().filter(ImportResult::isSuccess).count(),
-                    results.stream().filter(r -> !r.isSuccess()).count());
+            log.info("导入完成: {} 行", rowCount);
         }
 
         public List<ImportResult<T>> getResults() {
-            return results;
+            throw new UnsupportedOperationException("Streaming listener does not retain results");
         }
     }
 

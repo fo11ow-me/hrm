@@ -2,7 +2,7 @@ package com.qiujie.controller;
 
 import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
-import com.qiujie.service.FileTaskService;
+import com.qiujie.service.FileTaskCoordinator;
 import com.qiujie.service.FileUploadService;
 import com.qiujie.util.SecurityUtil;
 import io.swagger.v3.oas.annotations.Operation;
@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import jakarta.servlet.http.HttpServletResponse;
+
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
@@ -22,7 +23,7 @@ import java.util.Map;
 public class FileTaskController {
 
     @Autowired
-    private FileTaskService fileTaskService;
+    private FileTaskCoordinator fileTaskCoordinator;
 
     @Autowired
     private FileUploadService fileUploadService;
@@ -33,7 +34,7 @@ public class FileTaskController {
     @Operation(summary = "SSE 订阅任务状态更新")
     @GetMapping(value = "/subscribe", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter subscribe() {
-        return this.fileTaskService.subscribeSse();
+        return this.fileTaskCoordinator.subscribe();
     }
 
     @Operation(summary = "查询文件任务")
@@ -42,13 +43,13 @@ public class FileTaskController {
                             @RequestParam(defaultValue = "10") Integer size,
                             String taskType,
                             String module) {
-        return this.fileTaskService.list(current, size, taskType, module);
+        return this.fileTaskCoordinator.list(current, size, taskType, module);
     }
 
     @Operation(summary = "查询文件任务详情")
     @GetMapping("/{id}")
     public ResponseDTO query(@PathVariable Long id) {
-        return this.fileTaskService.query(id);
+        return this.fileTaskCoordinator.inspect(id);
     }
 
     @Operation(summary = "查询导入错误明细")
@@ -56,14 +57,14 @@ public class FileTaskController {
     public ResponseDTO queryErrors(@PathVariable Long id,
                                    @RequestParam(defaultValue = "1") Integer current,
                                    @RequestParam(defaultValue = "10") Integer size) {
-        return this.fileTaskService.queryErrors(id, current, size);
+        return this.fileTaskCoordinator.queryErrors(id, current, size);
     }
 
     @Operation(summary = "下载任务文件")
     @GetMapping("/{id}/download")
     public void download(@PathVariable Long id, @RequestParam(defaultValue = "RESULT") String fileType,
                          HttpServletResponse response) throws IOException {
-        this.fileTaskService.download(id, fileType, response);
+        this.fileTaskCoordinator.download(id, fileType, response);
     }
 
     // ========== 分片上传（三阶段协议）==========

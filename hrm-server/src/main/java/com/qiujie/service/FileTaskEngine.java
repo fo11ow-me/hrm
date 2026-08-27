@@ -1,10 +1,8 @@
 package com.qiujie.service;
 
 import cn.hutool.core.io.FileUtil;
-import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.ExcelWriter;
-import com.alibaba.excel.context.AnalysisContext;
-import com.alibaba.excel.event.AnalysisEventListener;
+import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.write.metadata.WriteSheet;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.qiujie.entity.FileTask;
@@ -29,12 +27,11 @@ import java.util.List;
 @Service
 public class FileTaskEngine {
 
-    private static final int IMPORT_BATCH_SIZE = 500;
     private static final int DB_BATCH_SIZE = 200;
     private static final int EXPORT_PAGE_SIZE = 500;
 
     @Autowired
-    private FileTaskService fileTaskService;
+    private FileTaskRuntimePort fileTaskRuntime;
 
     @Autowired
     private FileTaskErrorService fileTaskErrorService;
@@ -44,68 +41,70 @@ public class FileTaskEngine {
 
     /**
      * 执行异步导入。
-     * 使用 EasyExcel 流式读取，每攒够 IMPORT_BATCH_SIZE 行交给 processor 批量处理，
-     * 处理完清空 buffer 回收内存。
+     * 使用默认读取器流式读取，每攒够一批行交给 processor 批量处理。
      *
      * @param taskId    文件任务ID
      * @param processor 模块导入处理器
      */
     public <T> void runImport(Long taskId, ImportProcessor<T> processor) {
-        fileTaskService.markRunning(taskId);
-        FileTask task = fileTaskService.getById(taskId);
+        runImport(taskId, processor,
+                new EasyExcelImportReader<>(processor.getRowClass(), processor.headRowNumber()));
+    }
+
+    /**
+     * 使用指定读取器执行异步导入。
+     * 读取器负责文件格式适配，处理器只负责业务校验和入库，任务结算统一在此完成。
+     */
+    public <T> void runImport(Long taskId, ImportProcessor<T> processor,
+                              ImportReader<T> reader) {
+        if (!fileTaskRuntime.claimRunning(taskId)) {
+            return;
+        }
+        FileTask task = fileTaskRuntime.getById(taskId);
         if (task == null) {
             return;
         }
-        File sourceFile = resolveSourceFile(task.getSourceFilePath());
-        List<T> buffer = new ArrayList<>(IMPORT_BATCH_SIZE);
+        File sourceFile = null;
+        boolean temporarySource = false;
         try {
-            EasyExcel.read(sourceFile, processor.getRowClass(),
-                    new AnalysisEventListener<T>() {
-                        @Override
-                        public void invoke(T data, AnalysisContext context) {
-                            buffer.add(data);
-                            if (buffer.size() >= IMPORT_BATCH_SIZE) {
-                                processBuffer(new ArrayList<>(buffer), taskId, processor);
-                                buffer.clear();
-                            }
-                        }
+            sourceFile = resolveSourceFile(task.getSourceFilePath());
+            temporarySource = isDownloadedSource(task.getSourceFilePath());
+            reader.read(sourceFile, taskId,
+                    batch -> processBatch(batch, taskId, processor));
 
-                        @Override
-                        public void doAfterAllAnalysed(AnalysisContext context) {
-                            if (!buffer.isEmpty()) {
-                                processBuffer(new ArrayList<>(buffer), taskId, processor);
-                                buffer.clear();
-                            }
-                        }
-                    }).headRowNumber(processor.headRowNumber()).sheet().doRead();
-
-            FileTask finishedTask = fileTaskService.getById(taskId);
+            FileTask finishedTask = fileTaskRuntime.getById(taskId);
             if (finishedTask != null && finishedTask.getProcessedCount() != null) {
                 // 流式读取完成后回填真实总量，前端进度显示准确
-                fileTaskService.setTotalCount(taskId, finishedTask.getProcessedCount());
+                fileTaskRuntime.setTotalCount(taskId, finishedTask.getProcessedCount());
             }
             if (finishedTask != null && finishedTask.getFailCount() != null && finishedTask.getFailCount() > 0) {
-                fileTaskService.generateErrorFile(taskId);
-                fileTaskService.finish(taskId, TaskStatusEnum.PARTIAL_SUCCESS);
+                fileTaskRuntime.generateErrorFile(taskId);
+                fileTaskRuntime.finish(taskId, TaskStatusEnum.PARTIAL_SUCCESS);
             } else {
                 // 导入完全成功时立即删除源文件，避免敏感数据长期驻留磁盘
-                fileTaskService.deleteSourceFile(taskId);
-                fileTaskService.finish(taskId, TaskStatusEnum.SUCCESS);
+                fileTaskRuntime.deleteSourceFile(taskId);
+                fileTaskRuntime.finish(taskId, TaskStatusEnum.SUCCESS);
             }
         } catch (Exception e) {
-            fileTaskService.fail(taskId, e);
+            fileTaskRuntime.fail(taskId, e);
+        } finally {
+            deleteTemporaryFile(sourceFile, temporarySource);
         }
     }
 
-    private <T> void processBuffer(List<T> buffer, Long taskId, ImportProcessor<T> processor) {
-        List<FileTaskError> errors = new ArrayList<>();
-        processor.processBatch(buffer, taskId, errors::add);
+    private <T> void processBatch(ImportReader.ImportBatch<T> batch,
+                                  Long taskId, ImportProcessor<T> processor) {
+        List<FileTaskError> errors = new ArrayList<>(batch.errors());
+        int parsedRows = batch.rows().size();
+        if (!batch.rows().isEmpty()) {
+            processor.processBatch(batch.rows(), taskId, errors::add);
+        }
         if (!errors.isEmpty()) {
             fileTaskErrorService.saveBatch(errors, DB_BATCH_SIZE);
         }
-        // 导入为流式读取，不知总量，total=0 避免前端进度显示反复跳动
-        fileTaskService.increaseProgress(taskId, 0, buffer.size(),
-                buffer.size() - errors.size(), errors.size());
+        int businessFailures = errors.size() - batch.errors().size();
+        fileTaskRuntime.increaseProgress(taskId, 0, parsedRows + batch.errors().size(),
+                parsedRows - businessFailures, errors.size());
     }
 
     /**
@@ -118,11 +117,15 @@ public class FileTaskEngine {
      * @param exportName       导出文件名
      */
     public <T> void runExport(Long taskId, ExportProcessor<T> processor, String queryParamsJson, String exportName) {
-        fileTaskService.markRunning(taskId);
-        File resultFile = fileTaskService.buildTaskFile("task-result", exportName);
-        ExcelWriter excelWriter = EasyExcel.write(resultFile, processor.getRowClass()).build();
-        WriteSheet writeSheet = EasyExcel.writerSheet("data").build();
+        if (!fileTaskRuntime.claimRunning(taskId)) {
+            return;
+        }
+        File resultFile = null;
+        ExcelWriter excelWriter = null;
         try {
+            resultFile = fileTaskRuntime.buildTaskFile("task-result", exportName);
+            excelWriter = EasyExcel.write(resultFile, processor.getRowClass()).build();
+            WriteSheet writeSheet = EasyExcel.writerSheet("data").build();
             int current = 1;
             IPage<T> page;
             do {
@@ -133,17 +136,31 @@ public class FileTaskEngine {
                 }
                 excelWriter.write(list, writeSheet);
                 if (current == 1) {
-                    fileTaskService.setTotalCount(taskId, (int) page.getTotal());
+                    fileTaskRuntime.setTotalCount(taskId, (int) page.getTotal());
                 }
-                fileTaskService.increaseProgress(taskId, 0, list.size(), list.size(), 0);
+                fileTaskRuntime.increaseProgress(taskId, 0, list.size(), list.size(), 0);
                 current++;
             } while (current <= page.getPages());
-            fileTaskService.setResultFile(taskId, fileTaskService.uploadToMinio(resultFile, "task-result"));
-            fileTaskService.finish(taskId, TaskStatusEnum.SUCCESS);
+            fileTaskRuntime.setResultFile(taskId, fileTaskRuntime.uploadToMinio(resultFile, "task-result"));
+            resultFile = null;
+            fileTaskRuntime.finish(taskId, TaskStatusEnum.SUCCESS);
         } catch (Exception e) {
-            fileTaskService.fail(taskId, e);
+            fileTaskRuntime.fail(taskId, e);
         } finally {
-            excelWriter.finish();
+            if (excelWriter != null) {
+                excelWriter.finish();
+            }
+            deleteTemporaryFile(resultFile, true);
+        }
+    }
+
+    private boolean isDownloadedSource(String path) {
+        return path != null && !path.contains(File.separator) && !path.startsWith("/");
+    }
+
+    private void deleteTemporaryFile(File file, boolean temporary) {
+        if (temporary && file != null && file.isFile() && !file.delete()) {
+            file.deleteOnExit();
         }
     }
 

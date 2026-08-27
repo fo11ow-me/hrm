@@ -53,6 +53,11 @@ class FileTaskEngineUnitTest {
 
     private File excelFile;
 
+    @BeforeEach
+    void setUp() {
+        when(fileTaskService.claimRunning(anyLong())).thenReturn(true);
+    }
+
     @AfterEach
     void tearDown() {
         if (excelFile != null && excelFile.exists()) {
@@ -77,7 +82,7 @@ class FileTaskEngineUnitTest {
 
         fileTaskEngine.runImport(taskId, processor);
 
-        verify(fileTaskService).markRunning(taskId);
+        verify(fileTaskService).claimRunning(taskId);
         verify(processor, atLeastOnce()).processBatch(anyList(), eq(taskId), any());
         verify(fileTaskService).deleteSourceFile(taskId);
         verify(fileTaskService).finish(taskId, TaskStatusEnum.SUCCESS);
@@ -174,7 +179,7 @@ class FileTaskEngineUnitTest {
         fileTaskEngine.runImport(99L, processor);
 
         // markRunning 在 null 检查前调用，但后续流程不会继续
-        verify(fileTaskService).markRunning(99L);
+        verify(fileTaskService).claimRunning(99L);
         verify(processor, never()).processBatch(anyList(), anyLong(), any());
         verify(fileTaskService, never()).finish(anyLong(), any());
         verify(fileTaskService, never()).fail(anyLong(), (Exception) any());
@@ -228,7 +233,7 @@ class FileTaskEngineUnitTest {
 
         fileTaskEngine.runExport(taskId, processor, "{}", "test.xlsx");
 
-        verify(fileTaskService).markRunning(taskId);
+        verify(fileTaskService).claimRunning(taskId);
         verify(fileTaskService).setTotalCount(taskId, 3);
         verify(fileTaskService).increaseProgress(taskId, 0, 3, 3, 0);
         verify(fileTaskService).setResultFile(eq(taskId), anyString());
@@ -291,7 +296,7 @@ class FileTaskEngineUnitTest {
 
         fileTaskEngine.runExport(taskId, processor, "{}", "empty.xlsx");
 
-        verify(fileTaskService).markRunning(taskId);
+        verify(fileTaskService).claimRunning(taskId);
         verify(fileTaskService, never()).setTotalCount(anyLong(), anyInt());
         verify(fileTaskService).finish(taskId, TaskStatusEnum.SUCCESS);
     }
