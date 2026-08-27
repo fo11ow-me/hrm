@@ -4,6 +4,8 @@ import com.qiujie.assistant.ChatTools;
 import com.qiujie.assistant.dto.ChatRequest;
 import com.qiujie.assistant.entity.ChatMessage;
 import com.qiujie.assistant.entity.ChatSession;
+import com.qiujie.assistant.store.ChatSessionStore;
+import com.qiujie.util.SecurityUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -25,7 +27,7 @@ import java.util.List;
  * 职责：管理对话生命周期（会话创建→消息持久化→LLM 调用→SSE 推送）。
  * 委托边界：
  * <ul>
- *   <li>会话 CRUD + 游标分页 → {@link ChatSessionService}</li>
+ *   <li>会话 CRUD + 游标分页 → {@link ChatSessionStore}</li>
  *   <li>会话记忆（L1/L2/L3 压缩、token 截断）→ {@link ConversationContextFactory} + {@link ConversationContext}</li>
  *   <li>LLM 调用与 Prompt 构建 → 本类（内联）</li>
  *   <li>SSE 推送与回复落库 → {@link ChatSsePublisher}</li>
@@ -39,22 +41,25 @@ public class ChatService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
 
-    private final ChatSessionService sessionService;
+    private final ChatSessionStore sessionStore;
     private final ConversationContextFactory contextFactory;
     private final ChatClient chatClient;
     private final ChatTools chatTools;
     private final ChatSsePublisher ssePublisher;
+    private final SecurityUtil securityUtil;
 
-    public ChatService(ChatSessionService sessionService,
+    public ChatService(ChatSessionStore sessionStore,
                        ConversationContextFactory contextFactory,
                        ChatClient.Builder chatClientBuilder,
                        ChatTools chatTools,
-                       ChatSsePublisher ssePublisher) {
-        this.sessionService = sessionService;
+                       ChatSsePublisher ssePublisher,
+                       SecurityUtil securityUtil) {
+        this.sessionStore = sessionStore;
         this.contextFactory = contextFactory;
         this.chatClient = chatClientBuilder.build();
         this.chatTools = chatTools;
         this.ssePublisher = ssePublisher;
+        this.securityUtil = securityUtil;
     }
 
     /**
@@ -91,23 +96,28 @@ public class ChatService {
     // ==================== 查询（会话管理） ====================
 
     public List<ChatSession> listSessions() {
-        return sessionService.listSessions(sessionService.currentStaffId());
+        return sessionStore.listSessions(currentStaffId());
     }
 
     public ChatSession getSession(Long sessionId) {
-        return sessionService.getById(sessionId);
+        return sessionStore.getById(sessionId);
     }
 
     public java.util.Map<String, Object> listMessages(Long sessionId, String before, int size) {
-        return sessionService.listMessages(sessionId, before, size);
+        return sessionStore.listMessages(sessionId, before, size);
     }
 
     public void switchMode(Long sessionId, String mode) {
-        sessionService.switchMode(sessionId, mode);
+        sessionStore.switchMode(sessionId, mode);
     }
 
     public void deleteSession(Long sessionId) {
-        sessionService.delete(sessionId);
+        sessionStore.delete(sessionId);
+    }
+
+    /** 当前登录员工 ID（JWT），供会话查询范围限定。 */
+    public Integer currentStaffId() {
+        return securityUtil.getCurrentOperatorId();
     }
 
     // ==================== 私有 ====================

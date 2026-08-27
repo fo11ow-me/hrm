@@ -207,36 +207,6 @@ class ConversationContextUnitTest {
         verify(summarizer, never()).summarizeSessionMemory(any(), anyList(), anyString());
     }
 
-    // ==================== displaySummary ====================
-
-    @Test
-    @DisplayName("displaySummary: 有摘要文本时返回")
-    void displaySummary_withText() {
-        ctx.setSummaryText("用户咨询了请假政策");
-        when(contextMapper.selectById(1L)).thenReturn(ctx);
-
-        ConversationContext ctx2 = createContext();
-        assertEquals("用户咨询了请假政策", ctx2.displaySummary());
-    }
-
-    @Test
-    @DisplayName("displaySummary: 无摘要文本时返回 null")
-    void displaySummary_null() {
-        when(contextMapper.selectById(1L)).thenReturn(ctx);
-
-        ConversationContext ctx2 = createContext();
-        assertNull(ctx2.displaySummary());
-    }
-
-    @Test
-    @DisplayName("displaySummary: 上下文不存在时返回 null")
-    void displaySummary_noContext() {
-        when(contextMapper.selectById(1L)).thenReturn(null);
-
-        ConversationContext ctx2 = createContext();
-        assertNull(ctx2.displaySummary());
-    }
-
     // ==================== helpers ====================
 
     private List<ChatMessage> createMessages(int count, int charPerMessage) {

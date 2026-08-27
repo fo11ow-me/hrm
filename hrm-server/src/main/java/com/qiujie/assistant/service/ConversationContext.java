@@ -167,10 +167,12 @@ public final class ConversationContext {
 
     /**
      * 获取前端展示摘要（规则拼接，非 LLM）。
-     * 若确认前端从未消费此字段，本方法可安全删除。
+     * <p>前端从未消费此字段（hrm-admin 全库无引用），属死代码——本方法随
+     * {@code ast_chat_session_context.summary_text} 字段一并移除。</p>
      *
-     * @return 摘要文本，无内容或已过期时返回 {@code null}
+     * @deprecated 死代码，待 DB 列迁移后彻底删除
      */
+    @Deprecated
     @Nullable
     public String displaySummary() {
         ChatSessionContext ctx = contextMapper.selectById(session.getId());

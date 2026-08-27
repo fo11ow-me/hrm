@@ -7,7 +7,6 @@ import com.qiujie.assistant.service.ChatService;
 import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -32,33 +31,17 @@ public class ChatController {
     private ChatService chatService;
 
     /**
-     * 同步对话接口。
+     * SSE 流式对话接口。
      * <p>
-     * 前端发送用户消息，后端同步等待 LLM 完整回答后一次性返回。
-     * 适用于不需要打字机效果的场景（当前前端 AssistantChat.vue 实际走的就是这个接口）。
+     * 回答以 SSE（Server-Sent Events）流式推送给前端，每个字符作为一个 event:token 事件发送，
+     * 产生打字机效果。前端使用 fetch + ReadableStream 消费（参见 {@code assistant.js}）。
      * </p>
      *
      * @param request 包含 conversationId（可选）、message（必填）、mode（可选，默认 CHAT）
-     * @return 统一响应体，data 中包含 conversationId、answer、suggestions
+     * @return SseEmitter 实例，Spring MVC 会将其管理为长连接异步响应
      */
     @PostMapping("/chat")
     public SseEmitter chat(@RequestBody ChatRequest request) {
-        return chatService.chat(request);
-    }
-
-    /**
-     * SSE 流式对话接口。
-     * <p>
-     * 与 {@link #chat(ChatRequest)} 的区别：回答以 SSE（Server-Sent Events）
-     * 流式推送给前端，每个字符作为一个 event:token 事件发送，产生打字机效果。
-     * 前端使用 EventSource 或 fetch + ReadableStream 消费。
-     * </p>
-     *
-     * @param request 与同步接口结构相同
-     * @return SseEmitter 实例，Spring MVC 会将其管理为长连接异步响应
-     */
-    @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter chatStream(@RequestBody ChatRequest request) {
         return chatService.chat(request);
     }
 
