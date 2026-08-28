@@ -240,46 +240,6 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
 
 
     /**
-     * 每次迟到扣款
-     *
-     * @param staffSalaryVO
-     * @return
-     */
-    public Integer queryLateDeduct(StaffSalaryVO staffSalaryVO) {
-        return queryDeductRate(staffSalaryVO.getDeptId(), DeductEnum.LATE_DEDUCT);
-    }
-
-    /**
-     * 每次早退扣款
-     *
-     * @param staffSalaryVO
-     * @return
-     */
-    public Integer queryLeaveEarlyDeduct(StaffSalaryVO staffSalaryVO) {
-        return queryDeductRate(staffSalaryVO.getDeptId(), DeductEnum.LEAVE_EARLY_DEDUCT);
-    }
-
-    /**
-     * 每次旷工扣款
-     *
-     * @param staffSalaryVO
-     * @return
-     */
-    public Integer queryAbsenteeismDeduct(StaffSalaryVO staffSalaryVO) {
-        return queryDeductRate(staffSalaryVO.getDeptId(), DeductEnum.ABSENTEEISM_DEDUCT);
-    }
-
-    /**
-     * 每次休假扣款
-     *
-     * @param staffSalaryVO
-     * @return
-     */
-    public Integer queryLeaveDeduct(StaffSalaryVO staffSalaryVO) {
-        return queryDeductRate(staffSalaryVO.getDeptId(), DeductEnum.LEAVE_DEDUCT);
-    }
-
-    /**
      * 通过三阶段上传完成后创建异步导入任务。
      */
     public ResponseDTO createImportTask(String uploadId) {

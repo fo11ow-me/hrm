@@ -13,12 +13,10 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.qiujie.config.HolidayConfig;
-import com.qiujie.dto.OvertimeImportRow;
-import com.qiujie.dto.Response;
+import com.qiujie.dto.OvertimeImportRow;import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
 import com.qiujie.entity.*;
 import com.qiujie.enums.*;
-import com.qiujie.exception.ServiceException;
 import com.qiujie.mapper.StaffMapper;
 import com.qiujie.mapper.StaffOvertimeMapper;
 import com.qiujie.overtime.OvertimeCalculator;
@@ -30,12 +28,10 @@ import com.qiujie.util.SecurityUtil;
 import com.qiujie.vo.OvertimeMonthVO;
 import com.qiujie.vo.StaffOvertimeVO;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.InputStream;
@@ -60,9 +56,6 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
 
     @Autowired
     private StaffMapper staffMapper;
-
-    @Autowired
-    private HolidayConfig holidayConfig;
 
     @Autowired
     private DatetimeUtil datetimeUtil;
