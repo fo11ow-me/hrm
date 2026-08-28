@@ -6,11 +6,11 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
-import com.qiujie.dto.notification.NotificationEvent;
 import com.qiujie.entity.Staff;
 import com.qiujie.entity.StaffLeave;
 import com.qiujie.enums.AuditStatusEnum;
 import com.qiujie.enums.BusinessStatusEnum;
+import com.qiujie.leaveapproval.LeaveNotifier;
 import com.qiujie.mapper.StaffLeaveMapper;
 import com.qiujie.mapper.StaffMapper;
 import com.qiujie.util.EnumUtil;
@@ -63,7 +63,7 @@ public class StaffLeaveService extends ServiceImpl<StaffLeaveMapper, StaffLeave>
     private SecurityUtil securityUtil;
 
     @Autowired
-    private SseService sseService;
+    private LeaveNotifier leaveNotifier;
 
     /**
      * 获取当前登录用户的工号
@@ -305,7 +305,7 @@ public class StaffLeaveService extends ServiceImpl<StaffLeaveMapper, StaffLeave>
 
             // 推送通知（不阻塞主流程）
             if (staffList != null) {
-                pushLeaveSubmitted(staffLeave, staffList);
+                leaveNotifier.onLeaveSubmitted(staffLeave, staffList.stream().map(Staff::getId).collect(Collectors.toList()));
             }
 
             return Response.success();
@@ -419,37 +419,10 @@ public class StaffLeaveService extends ServiceImpl<StaffLeaveMapper, StaffLeave>
                  task.getId(), code, staffLeave.getStatus());
 
         // 推送通知给申请人
-        pushLeaveCompleted(staffLeave);
+        leaveNotifier.onLeaveCompleted(staffLeave);
 
         return Response.success();
     }
-
-    private void pushLeaveSubmitted(StaffLeave leave, List<Staff> hrList) {
-        try {
-            String desc = leave.getDays() + "天请假，等待审批";
-            sseService.emit(leave.getStaffId(), "notification",
-                    new NotificationEvent("LEAVE_SUBMITTED", "请假申请已提交", desc));
-            for (Staff hr : hrList) {
-                sseService.emit(hr.getId(), "notification",
-                        new NotificationEvent("LEAVE_PENDING", "新的请假申请", "员工提交了" + leave.getDays() + "天请假"));
-            }
-        } catch (Exception e) {
-            log.warn("Failed to push leave submitted notification", e);
-        }
-    }
-
-    private void pushLeaveCompleted(StaffLeave leave) {
-        try {
-            boolean approved = AuditStatusEnum.APPROVE.equals(leave.getStatus());
-            String type = approved ? "LEAVE_APPROVED" : "LEAVE_REJECTED";
-            String title = "请假" + (approved ? "已通过" : "已拒绝");
-            String body = leave.getDays() + "天请假" + (approved ? "已通过" : "已拒绝");
-            sseService.emit(leave.getStaffId(), "notification", new NotificationEvent(type, title, body));
-        } catch (Exception e) {
-            log.warn("Failed to push leave completed notification", e);
-        }
-    }
-
 
     /**
      * 撤销请假申请
