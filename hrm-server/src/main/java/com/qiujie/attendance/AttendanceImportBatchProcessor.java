@@ -1,4 +1,4 @@
-package com.qiujie.service;
+package com.qiujie.attendance;
 
 import com.qiujie.dto.AttendanceImportRow;
 import com.qiujie.entity.Attendance;
@@ -33,8 +33,13 @@ import cn.hutool.core.date.DateUtil;
  * 统一同步导入和异步文件任务使用的预加载、校验、状态判定与批量写入规则。
  * 不负责文件读取、任务状态或错误记录持久化。
  * </p>
+ * <p>
+ * 迟到/早退/旷工判定规则同时供 {@code AttendanceService} 使用（见
+ * {@link #isLate} / {@link #isLeaveEarly} / {@link #isAbsenteeism}），
+ * 避免两处逻辑漂移。
+ * </p>
  */
-final class AttendanceImportBatchProcessor {
+public class AttendanceImportBatchProcessor {
 
     private static final int DB_BATCH_SIZE = 200;
 
@@ -43,18 +48,18 @@ final class AttendanceImportBatchProcessor {
     private final StaffMapper staffMapper;
     private final TransactionTemplate transactionTemplate;
 
-    AttendanceImportBatchProcessor(AttendanceMapper attendanceMapper,
-                                   DeptMapper deptMapper,
-                                   StaffMapper staffMapper,
-                                   TransactionTemplate transactionTemplate) {
+    public AttendanceImportBatchProcessor(AttendanceMapper attendanceMapper,
+                                          DeptMapper deptMapper,
+                                          StaffMapper staffMapper,
+                                          TransactionTemplate transactionTemplate) {
         this.attendanceMapper = attendanceMapper;
         this.deptMapper = deptMapper;
         this.staffMapper = staffMapper;
         this.transactionTemplate = transactionTemplate;
     }
 
-    Result process(List<AttendanceImportRow> rows, Long taskId,
-                   Consumer<FileTaskError> errorCollector) {
+    public Result process(List<AttendanceImportRow> rows, Long taskId,
+                          Consumer<FileTaskError> errorCollector) {
         Result result = new Result();
         if (rows == null || rows.isEmpty()) {
             return result;
@@ -160,7 +165,7 @@ final class AttendanceImportBatchProcessor {
         }
     }
 
-    boolean isLate(Attendance attendance, Dept dept) {
+    public boolean isLate(Attendance attendance, Dept dept) {
         if (attendance.getMorStartTime() == null || attendance.getAftStartTime() == null) {
             return false;
         }
@@ -168,7 +173,7 @@ final class AttendanceImportBatchProcessor {
                 || DateUtil.compare(attendance.getAftStartTime(), dept.getAftStartTime(), "HH:mm:ss") > 0;
     }
 
-    boolean isLeaveEarly(Attendance attendance, Dept dept) {
+    public boolean isLeaveEarly(Attendance attendance, Dept dept) {
         if (attendance.getMorEndTime() == null || attendance.getAftEndTime() == null) {
             return false;
         }
@@ -176,7 +181,7 @@ final class AttendanceImportBatchProcessor {
                 || DateUtil.compare(attendance.getAftEndTime(), dept.getAftEndTime(), "HH:mm:ss") < 0;
     }
 
-    boolean isAbsenteeism(Attendance attendance, Dept dept) {
+    public boolean isAbsenteeism(Attendance attendance, Dept dept) {
         if (attendance.getMorStartTime() == null || attendance.getMorEndTime() == null
                 || attendance.getAftStartTime() == null || attendance.getAftEndTime() == null) {
             return true;
@@ -185,18 +190,23 @@ final class AttendanceImportBatchProcessor {
     }
 
     private Attendance convertAttendance(AttendanceImportRow row) {
-        return new Attendance()
-                .setStaffId(row.getStaffId())
-                .setMorStartTime(toSqlTimestamp(row.getMorStartTime()))
-                .setMorEndTime(toSqlTimestamp(row.getMorEndTime()))
-                .setAftStartTime(toSqlTimestamp(row.getAftStartTime()))
-                .setAftEndTime(toSqlTimestamp(row.getAftEndTime()))
-                .setAttendanceDate(toSqlDate(row.getAttendanceDate()));
+        Attendance attendance = new Attendance();
+        attendance.setStaffId(row.getStaffId());
+        attendance.setMorStartTime(toSqlTimestamp(row.getMorStartTime()));
+        attendance.setMorEndTime(toSqlTimestamp(row.getMorEndTime()));
+        attendance.setAftStartTime(toSqlTimestamp(row.getAftStartTime()));
+        attendance.setAftEndTime(toSqlTimestamp(row.getAftEndTime()));
+        attendance.setAttendanceDate(toSqlDate(row.getAttendanceDate()));
+        return attendance;
     }
 
     private FileTaskError buildError(Long taskId, int rowNum, String rawData, String message) {
-        return new FileTaskError().setTaskId(taskId).setRowNum(rowNum)
-                .setRawData(rawData).setErrorMessage(message);
+        FileTaskError error = new FileTaskError();
+        error.setTaskId(taskId);
+        error.setRowNum(rowNum);
+        error.setRawData(rawData);
+        error.setErrorMessage(message);
+        return error;
     }
 
     private String buildRowData(AttendanceImportRow row) {
@@ -220,10 +230,11 @@ final class AttendanceImportBatchProcessor {
         return date == null ? null : new Date(date.getTime());
     }
 
-    static final class Result {
-        int totalCount;
-        int processedCount;
-        int successCount;
-        int failCount;
+    /** 处理结果统计。 */
+    public static final class Result {
+        public int totalCount;
+        public int processedCount;
+        public int successCount;
+        public int failCount;
     }
 }

@@ -10,6 +10,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.qiujie.enums.TaskModuleEnum;
+import com.qiujie.attendance.AttendanceImportBatchProcessor;
 import com.qiujie.dto.AttendanceImportRow;
 import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
@@ -84,6 +85,9 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
 
     @Autowired
     private SecurityUtil securityUtil;
+
+    @Autowired
+    private AttendanceImportBatchProcessor importBatchProcessor;
 
     public ResponseDTO add(Attendance attendance) {
         if (save(attendance)) {
@@ -310,17 +314,14 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
         return Response.error();
     }
 
-    private AttendanceImportBatchProcessor importBatchProcessor() {
-        return new AttendanceImportBatchProcessor(attendanceMapper, deptMapper, staffMapper, transactionTemplate);
-    }
-
     // 三步走：① 批量查询本批次涉及的员工/部门/已有考勤
     //        ② 逐行校验 + 计算考勤状态（迟到/早退/旷工/正常）
     //        ③ 批量 saveOrUpdate + 批量记录错误
     // 关键：先批量查再逐行判，避免每行一次 DB 查询
+    // 规则实现收敛在 AttendanceImportBatchProcessor（同一规则供同步/异步导入复用）
     ImportBatchResult processImportRows(List<AttendanceImportRow> rows, Long taskId, boolean persistTaskError) {
         List<FileTaskError> errors = new ArrayList<>();
-        AttendanceImportBatchProcessor.Result processed = importBatchProcessor().process(
+        AttendanceImportBatchProcessor.Result processed = importBatchProcessor.process(
                 rows, taskId, errors::add);
         if (persistTaskError && !errors.isEmpty()) {
             fileTaskErrorService.saveBatch(errors, DB_BATCH_SIZE);
@@ -333,56 +334,25 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
         return result;
     }
 
-    private Attendance convertAttendance(AttendanceImportRow row) {
-        Attendance attendance = new Attendance();
-        attendance.setStaffId(row.getStaffId());
-        attendance.setMorStartTime(toSqlTimestamp(row.getMorStartTime()));
-        attendance.setMorEndTime(toSqlTimestamp(row.getMorEndTime()));
-        attendance.setAftStartTime(toSqlTimestamp(row.getAftStartTime()));
-        attendance.setAftEndTime(toSqlTimestamp(row.getAftEndTime()));
-        attendance.setAttendanceDate(toSqlDate(row.getAttendanceDate()));
-        return attendance;
+    /**
+     * 迟到判定——委托批处理规则（唯一实现）。
+     */
+    public boolean isLate(Attendance attendance, Dept dept) {
+        return importBatchProcessor.isLate(attendance, dept);
     }
 
-    private FileTaskError buildTaskError(Long taskId, Integer rowNum, String rawData, String errorMessage) {
-        return new FileTaskError()
-                .setTaskId(taskId)
-                .setRowNum(rowNum)
-                .setRawData(rawData)
-                .setErrorMessage(errorMessage);
+    /**
+     * 早退判定——委托批处理规则（唯一实现）。
+     */
+    public boolean isLeaveEarly(Attendance attendance, Dept dept) {
+        return importBatchProcessor.isLeaveEarly(attendance, dept);
     }
 
-    private String buildRowData(AttendanceImportRow row) {
-        String date = row.getAttendanceDate() == null ? "" : DateUtil.formatDate(row.getAttendanceDate());
-        return "staffId=" + row.getStaffId() + ", attendanceDate=" + date;
-    }
-
-    private Integer resolveRowNum(AttendanceImportRow row) {
-        return row.getRowNum() == null ? 0 : row.getRowNum();
-    }
-
-    private String buildAttendanceKey(Attendance attendance) {
-        return attendance.getStaffId() + "_" + attendance.getAttendanceDate();
-    }
-
-    private Timestamp toSqlTimestamp(java.util.Date date) {
-        if (date == null) {
-            return null;
-        }
-        Calendar calendar = Calendar.getInstance();
-        calendar.setTime(date);
-        LocalDateTime localDateTime = LocalDateTime.of(1970, 1, 1,
-                calendar.get(Calendar.HOUR_OF_DAY),
-                calendar.get(Calendar.MINUTE),
-                calendar.get(Calendar.SECOND));
-        return Timestamp.valueOf(localDateTime);
-    }
-
-    private Date toSqlDate(java.util.Date date) {
-        if (date == null) {
-            return null;
-        }
-        return new Date(date.getTime());
+    /**
+     * 旷工判定——委托批处理规则（唯一实现）。
+     */
+    public boolean isAbsenteeism(Attendance attendance, Dept dept) {
+        return importBatchProcessor.isAbsenteeism(attendance, dept);
     }
 
     private int valueOrZero(Integer value) {
@@ -391,34 +361,6 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
 
     private Integer getCurrentOperatorId() {
         return securityUtil.getCurrentOperatorId();
-    }
-
-    boolean isLate(Attendance attendance, Dept dept) {
-        if (attendance.getMorStartTime() == null || attendance.getAftStartTime() == null) {
-            return false;
-        }
-        if (DateUtil.compare(attendance.getMorStartTime(), dept.getMorStartTime(), "HH:mm:ss") > 0) {
-            return true;
-        }
-        return DateUtil.compare(attendance.getAftStartTime(), dept.getAftStartTime(), "HH:mm:ss") > 0;
-    }
-
-    boolean isLeaveEarly(Attendance attendance, Dept dept) {
-        if (attendance.getMorEndTime() == null || attendance.getAftEndTime() == null) {
-            return false;
-        }
-        if (DateUtil.compare(attendance.getMorEndTime(), dept.getMorEndTime(), "HH:mm:ss") < 0) {
-            return true;
-        }
-        return DateUtil.compare(attendance.getAftEndTime(), dept.getAftEndTime(), "HH:mm:ss") < 0;
-    }
-
-    boolean isAbsenteeism(Attendance attendance, Dept dept) {
-        if (attendance.getMorStartTime() == null || attendance.getMorEndTime() == null
-                || attendance.getAftStartTime() == null || attendance.getAftEndTime() == null) {
-            return true;
-        }
-        return isLate(attendance, dept) && isLeaveEarly(attendance, dept);
     }
 
     static class ImportBatchResult {
@@ -443,7 +385,7 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
 
         @Override
         public void processBatch(List<AttendanceImportRow> rows, Long taskId, Consumer<FileTaskError> errorCollector) {
-            importBatchProcessor().process(rows, taskId, errorCollector);
+            importBatchProcessor.process(rows, taskId, errorCollector);
         }
     }
 

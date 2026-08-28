@@ -1,6 +1,7 @@
 package com.qiujie.service;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.qiujie.attendance.AttendanceImportBatchProcessor;
 import com.qiujie.entity.Attendance;
 import com.qiujie.entity.Dept;
 import com.qiujie.entity.FileTaskError;
@@ -74,6 +75,9 @@ class AttendanceServiceUnitTest {
         ReflectionTestUtils.setField(attendanceService, "transactionTemplate", transactionTemplate);
         ReflectionTestUtils.setField(attendanceService, "fileTaskErrorService", fileTaskErrorService);
         ReflectionTestUtils.setField(attendanceService, "securityUtil", securityUtil);
+        // 注入批处理领域服务（同一规则源，迟到/早退/旷工判定委托给它）
+        ReflectionTestUtils.setField(attendanceService, "importBatchProcessor",
+                new AttendanceImportBatchProcessor(attendanceMapper, deptMapper, staffMapper, transactionTemplate));
 
         // 准备测试部门：技术部 09:00-12:00, 13:00-18:00
         dept1 = new Dept();
