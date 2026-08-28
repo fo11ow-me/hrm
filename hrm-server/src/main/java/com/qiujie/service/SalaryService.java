@@ -17,6 +17,7 @@ import com.qiujie.mapper.SalaryMapper;
 import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
 import com.qiujie.mapper.StaffOvertimeMapper;
+import com.qiujie.salarycalculation.SalaryCalculation;
 import com.qiujie.util.EasyExcelUtil;
 import com.qiujie.util.SecurityUtil;
 import com.qiujie.vo.StaffSalaryVO;
@@ -161,55 +162,50 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
         Date startDate = dt.toSqlDate();
         Date endDate = DateUtil.offsetMonth(dt, 1).toSqlDate();
         for (StaffSalaryVO staffSalaryVO : list) {
-            // 迟到扣款
-            BigDecimal lateDeduct = BigDecimal.valueOf(this.attendanceMapper.countTimes(staffSalaryVO.getStaffId(),
-                    AttendanceStatusEnum.LATE.getCode(), startDate, endDate) * queryLateDeduct(staffSalaryVO));
-            staffSalaryVO.setLateDeduct(lateDeduct);
-            // 早退扣款
-            BigDecimal leaveEarlyDeduct = BigDecimal.valueOf(this.attendanceMapper.countTimes(staffSalaryVO.getStaffId(),
-                    AttendanceStatusEnum.LEAVE_EARLY.getCode(), startDate, endDate) * queryLeaveEarlyDeduct(staffSalaryVO));
-            staffSalaryVO.setLeaveEarlyDeduct(leaveEarlyDeduct);
-            // 旷工扣款
-            BigDecimal absenteeismDeduct = BigDecimal.valueOf(this.attendanceMapper.countTimes(staffSalaryVO.getStaffId(),
-                    AttendanceStatusEnum.ABSENTEEISM.getCode(), startDate, endDate) * queryAbsenteeismDeduct(staffSalaryVO));
-            staffSalaryVO.setAbsenteeismDeduct(absenteeismDeduct);
-            // 休假扣款
+            // 考勤次数（迟到/早退/旷工）
+            Map<Integer, Integer> attendanceCounts = new HashMap<>();
+            attendanceCounts.put(AttendanceStatusEnum.LATE.getCode(),
+                    this.attendanceMapper.countTimes(staffSalaryVO.getStaffId(),
+                            AttendanceStatusEnum.LATE.getCode(), startDate, endDate));
+            attendanceCounts.put(AttendanceStatusEnum.LEAVE_EARLY.getCode(),
+                    this.attendanceMapper.countTimes(staffSalaryVO.getStaffId(),
+                            AttendanceStatusEnum.LEAVE_EARLY.getCode(), startDate, endDate));
+            attendanceCounts.put(AttendanceStatusEnum.ABSENTEEISM.getCode(),
+                    this.attendanceMapper.countTimes(staffSalaryVO.getStaffId(),
+                            AttendanceStatusEnum.ABSENTEEISM.getCode(), startDate, endDate));
+            // 休假扣款仅计工作日（跳过周末）
+            int leaveWorkdayCount = 0;
             List<Date> leaveDateList = this.attendanceMapper.queryLeaveDate(staffSalaryVO.getStaffId(),
                     AttendanceStatusEnum.LEAVE.getCode(), startDate, endDate);
-            int count = 0;
             for (Date date : leaveDateList) {
-                // 不包括周末
                 if (!DateUtil.isWeekend(date)) {
-                    count++;
+                    leaveWorkdayCount++;
                 }
             }
-            BigDecimal leaveDeduct = (BigDecimal.valueOf(count * queryLeaveDeduct(staffSalaryVO)));
-            staffSalaryVO.setLeaveDeduct(leaveDeduct);
-            QueryWrapper<Salary> queryWrapper = new QueryWrapper<>();
-            queryWrapper.eq("staff_id", staffSalaryVO.getStaffId()).eq("month", month);
-            Salary one = getOne(queryWrapper);
-            if (one != null) {
-                BigDecimal monthOvertimeSalary = this.staffOvertimeMapper.sumMonthOvertimeSalary(staffSalaryVO.getStaffId(), month);
-                // 如果员工当前月没有加班工资，加班工资为0
-                monthOvertimeSalary = monthOvertimeSalary == null ? BigDecimal.valueOf(0) : monthOvertimeSalary;
-                staffSalaryVO
-                        .setBaseSalary(one.getBaseSalary())
-                        .setOvertimeSalary(monthOvertimeSalary)
-                        .setSubsidy(one.getSubsidy())
-                        .setBonus(one.getBonus())
-                        .setRemark(one.getRemark())
-                        .setTotalSalary(one.getBaseSalary()
-                                .add(one.getBonus())
-                                .add(one.getSubsidy())
-                                .add(monthOvertimeSalary)
-                                .subtract(lateDeduct)
-                                .subtract(leaveEarlyDeduct)
-                                .subtract(absenteeismDeduct)
-                                .subtract(leaveDeduct)
-                                .subtract(staffSalaryVO.getSocialPay())
-                                .subtract(staffSalaryVO.getHousePay()));
+            // 扣款配置（部门维度）
+            Map<Integer, Integer> deductRates = new HashMap<>();
+            for (DeductEnum type : DeductEnum.values()) {
+                deductRates.put(type.getCode(), queryDeductRate(staffSalaryVO.getDeptId(), type));
             }
+            // 当月薪资记录 + 加班费汇总
+            Salary monthSalary = getOne(new QueryWrapper<Salary>()
+                    .eq("staff_id", staffSalaryVO.getStaffId()).eq("month", month));
+            BigDecimal monthOvertime = this.staffOvertimeMapper.sumMonthOvertimeSalary(
+                    staffSalaryVO.getStaffId(), month);
+            // 纯计算委托
+            SalaryCalculation.compute(staffSalaryVO, attendanceCounts, leaveWorkdayCount,
+                    monthOvertime, monthSalary, deductRates);
         }
+    }
+
+    /** 扣款配置：按部门 + 类型查询，缺失回退默认值。 */
+    private Integer queryDeductRate(Integer deptId, DeductEnum type) {
+        if (deptId == null) {
+            return type.getDefaultValue();
+        }
+        SalaryDeduct salaryDeduct = this.salaryDeductService.getOne(new QueryWrapper<SalaryDeduct>()
+                .eq("dept_id", deptId).eq("type_num", type));
+        return salaryDeduct != null ? salaryDeduct.getDeduct() : type.getDefaultValue();
     }
 
     /**
@@ -250,10 +246,7 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
      * @return
      */
     public Integer queryLateDeduct(StaffSalaryVO staffSalaryVO) {
-        QueryWrapper<SalaryDeduct> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("dept_id", staffSalaryVO.getDeptId()).eq("type_num", DeductEnum.LATE_DEDUCT);
-        SalaryDeduct salaryDeduct = this.salaryDeductService.getOne(queryWrapper);
-        return salaryDeduct != null ? salaryDeduct.getDeduct() : DeductEnum.LATE_DEDUCT.getDefaultValue();
+        return queryDeductRate(staffSalaryVO.getDeptId(), DeductEnum.LATE_DEDUCT);
     }
 
     /**
@@ -263,10 +256,7 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
      * @return
      */
     public Integer queryLeaveEarlyDeduct(StaffSalaryVO staffSalaryVO) {
-        QueryWrapper<SalaryDeduct> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("dept_id", staffSalaryVO.getDeptId()).eq("type_num", DeductEnum.LEAVE_EARLY_DEDUCT);
-        SalaryDeduct salaryDeduct = this.salaryDeductService.getOne(queryWrapper);
-        return salaryDeduct != null ? salaryDeduct.getDeduct() : DeductEnum.LEAVE_EARLY_DEDUCT.getDefaultValue();
+        return queryDeductRate(staffSalaryVO.getDeptId(), DeductEnum.LEAVE_EARLY_DEDUCT);
     }
 
     /**
@@ -276,10 +266,7 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
      * @return
      */
     public Integer queryAbsenteeismDeduct(StaffSalaryVO staffSalaryVO) {
-        QueryWrapper<SalaryDeduct> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("dept_id", staffSalaryVO.getDeptId()).eq("type_num", DeductEnum.ABSENTEEISM_DEDUCT);
-        SalaryDeduct salaryDeduct = this.salaryDeductService.getOne(queryWrapper);
-        return salaryDeduct != null ? salaryDeduct.getDeduct() : DeductEnum.ABSENTEEISM_DEDUCT.getDefaultValue();
+        return queryDeductRate(staffSalaryVO.getDeptId(), DeductEnum.ABSENTEEISM_DEDUCT);
     }
 
     /**
@@ -289,10 +276,7 @@ public class SalaryService extends ServiceImpl<SalaryMapper, Salary> {
      * @return
      */
     public Integer queryLeaveDeduct(StaffSalaryVO staffSalaryVO) {
-        QueryWrapper<SalaryDeduct> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("dept_id", staffSalaryVO.getDeptId()).eq("type_num", DeductEnum.LEAVE_DEDUCT);
-        SalaryDeduct salaryDeduct = this.salaryDeductService.getOne(queryWrapper);
-        return salaryDeduct != null ? salaryDeduct.getDeduct() : DeductEnum.LEAVE_DEDUCT.getDefaultValue();
+        return queryDeductRate(staffSalaryVO.getDeptId(), DeductEnum.LEAVE_DEDUCT);
     }
 
     /**
