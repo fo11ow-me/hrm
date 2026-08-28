@@ -1,77 +1,37 @@
 package com.qiujie.listener;
 
-import cn.hutool.core.date.DateUtil;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.qiujie.dto.Response;
-import com.qiujie.entity.Attendance;
 import com.qiujie.entity.StaffLeave;
-import com.qiujie.entity.StaffOvertime;
-import com.qiujie.enums.AttendanceStatusEnum;
-import com.qiujie.enums.BusinessStatusEnum;
-import com.qiujie.enums.LeaveEnum;
-import com.qiujie.enums.OvertimeStatusEnum;
-import com.qiujie.exception.ServiceException;
-import com.qiujie.mapper.StaffOvertimeMapper;
-import com.qiujie.service.AttendanceService;
+import com.qiujie.leaveapproval.LeaveApprovalSideEffects;
 import com.qiujie.service.StaffLeaveService;
-import com.qiujie.util.DatetimeUtil;
 import org.flowable.engine.delegate.DelegateExecution;
 import org.flowable.engine.delegate.ExecutionListener;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.sql.Date;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 
+/**
+ * 经理审批执行监听器——流程转译层。
+ * <p>
+ * 考勤/调休同步的副作用委托给 {@link LeaveApprovalSideEffects}，本类只做：
+ * 按流程实例业务 key 取请假记录 → 触发审批副作用。
+ * </p>
+ */
 @Component
 public class ManagerApproveListener implements ExecutionListener {
 
-    @Autowired
-    private StaffLeaveService staffLeaveService;
+    private final StaffLeaveService staffLeaveService;
+    private final LeaveApprovalSideEffects sideEffects;
 
-    @Autowired
-    private StaffOvertimeMapper staffOvertimeMapper;
-
-    @Autowired
-    private AttendanceService attendanceService;
-
-    @Autowired
-    private DatetimeUtil datetimeUtil;
+    public ManagerApproveListener(StaffLeaveService staffLeaveService,
+                                  LeaveApprovalSideEffects sideEffects) {
+        this.staffLeaveService = staffLeaveService;
+        this.sideEffects = sideEffects;
+    }
 
     @Override
-    @Transactional
     public void notify(DelegateExecution execution) {
-        StaffLeave staffLeave = this.staffLeaveService.getOne(new QueryWrapper<StaffLeave>().eq("id", Integer.valueOf(execution.getProcessInstanceBusinessKey())));
-        for (int i = 0; i < staffLeave.getDays(); i++) {
-            Date attendanceDate = DateUtil.offsetDay(staffLeave.getStartDate(), i).toSqlDate();
-            // 因为周末本就要休息，所以只需记录在休假期间包括的工作日的考勤状态到数据库
-            if (DateUtil.isWeekend(attendanceDate) || this.datetimeUtil.isHoliday(attendanceDate)) {
-                continue;
-            }
-            Attendance attendance = new Attendance().setAttendanceDate(attendanceDate).setStaffId(staffLeave.getStaffId());
-            // 如果请假类型是调休，考勤状态设为调休；其他类型的假期都设为休假
-            if (staffLeave.getTypeNum() == LeaveEnum.TIME_OFF) {
-                attendance.setStatus(AttendanceStatusEnum.TIME_OFF);
-                // 删除员工的一条调休记录
-                this.staffOvertimeMapper.delete(new QueryWrapper<StaffOvertime>()
-                        .eq("staff_id", staffLeave.getStaffId())
-                        .eq("status", OvertimeStatusEnum.TIME_OFF).orderByAsc("overtime_date").last("limit 1"));
-            } else {
-                attendance.setStatus(AttendanceStatusEnum.LEAVE);
-            }
-            QueryWrapper<Attendance> queryWrapper = new QueryWrapper<>();
-            queryWrapper.eq("staff_id", attendance.getStaffId()).eq("attendance_date", attendance.getAttendanceDate());
-            Attendance existing = this.attendanceService.getOne(queryWrapper);
-            if (existing != null) {
-                attendance.setId(existing.getId());
-                if (!this.attendanceService.updateById(attendance)) {
-                    throw new ServiceException(BusinessStatusEnum.ERROR);
-                }
-            } else {
-                if (!this.attendanceService.save(attendance)) {
-                    throw new ServiceException(BusinessStatusEnum.ERROR);
-                }
-            }
-        }
+        StaffLeave staffLeave = staffLeaveService.getOne(new QueryWrapper<StaffLeave>()
+                .eq("id", Integer.valueOf(execution.getProcessInstanceBusinessKey())));
+        sideEffects.onLeaveApproved(staffLeave);
     }
 }

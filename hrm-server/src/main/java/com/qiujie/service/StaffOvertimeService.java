@@ -19,10 +19,10 @@ import com.qiujie.dto.ResponseDTO;
 import com.qiujie.entity.*;
 import com.qiujie.enums.*;
 import com.qiujie.exception.ServiceException;
-import com.qiujie.mapper.OvertimeMapper;
-import com.qiujie.mapper.SalaryMapper;
 import com.qiujie.mapper.StaffMapper;
 import com.qiujie.mapper.StaffOvertimeMapper;
+import com.qiujie.overtime.OvertimeCalculator;
+import com.qiujie.overtime.OvertimeResult;
 import com.qiujie.util.AiHeaderMatcherImpl;
 import com.qiujie.util.DatetimeUtil;
 import com.qiujie.util.EasyExcelUtil;
@@ -62,13 +62,7 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
     private StaffMapper staffMapper;
 
     @Autowired
-    private OvertimeMapper overtimeMapper;
-
-    @Autowired
     private HolidayConfig holidayConfig;
-
-    @Autowired
-    private SalaryMapper salaryMapper;
 
     @Autowired
     private DatetimeUtil datetimeUtil;
@@ -84,6 +78,9 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
 
     @Autowired(required = false)
     private AiHeaderMatcherImpl aiHeaderMatcher;
+
+    @Autowired
+    private OvertimeCalculator overtimeCalculator;
 
     public ResponseDTO add(StaffOvertime staffOvertime) {
         if (save(staffOvertime)) {
@@ -214,98 +211,19 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
                     || staffOvertime.getAftEndTime() == null) {
                 continue;
             }
-            Staff staff = this.staffMapper.selectById(staffOvertime.getStaffId());
-            // 设置加班状态
-            staffOvertime.setStatus(OvertimeStatusEnum.OVERTIME);
-            // 设置加班时间
-            BigDecimal totalOvertime = calculateTotalOvertime(staffOvertime);
-            staffOvertime.setTotalOvertime(totalOvertime);
-            // 以最近的一次工资为准
-            Salary salary = this.salaryMapper.selectList(new QueryWrapper<Salary>().eq("staff_id", staff.getId()).orderByDesc("month")).get(0);
-            // 如果是节假日
-            if (this.datetimeUtil.isHoliday(staffOvertime.getOvertimeDate())) {
-                // 设置加班类型
-                staffOvertime.setTypeNum(OvertimeEnum.HOLIDAY_OVERTIME);
-                Overtime overtime = this.overtimeMapper.selectOne(new QueryWrapper<Overtime>()
-                        .eq("type_num", OvertimeEnum.HOLIDAY_OVERTIME)
-                        .eq("dept_id", staff.getDeptId()));
-
-                calculateOvertimeSalary(staffOvertime, totalOvertime, salary, overtime);
-            } else if (DateUtil.isWeekend(staffOvertime.getOvertimeDate())) { // 休息日加班
-                // 设置加班类型
-                staffOvertime.setTypeNum(OvertimeEnum.DAY_OFF_OVERTIME);
-                Overtime overtime = this.overtimeMapper.selectOne(new QueryWrapper<Overtime>()
-                        .eq("type_num", OvertimeEnum.DAY_OFF_OVERTIME)
-                        .eq("dept_id", staff.getDeptId()));
-                // 如果不调休
-                if (overtime.getTimeOffFlag() == 0) {
-                    calculateOvertimeSalary(staffOvertime, totalOvertime, salary, overtime);
-                } else {
-                    // 当调休时，每天的加班时间不应该小于8小时，补休天数加一；否则没有补休
-                    if (totalOvertime.compareTo(new BigDecimal(8)) != -1) {
-                        staffOvertime.setStatus(OvertimeStatusEnum.TIME_OFF);
-                    }
-                }
-            } else {
-                // 设置加班类型
-                staffOvertime.setTypeNum(OvertimeEnum.WORKDAY_OVERTIME); // 工作日加班
-                Overtime overtime = this.overtimeMapper.selectOne(new QueryWrapper<Overtime>()
-                        .eq("type_num", OvertimeEnum.WORKDAY_OVERTIME)
-                        .eq("dept_id", staff.getDeptId()));
-                calculateOvertimeSalary(staffOvertime, totalOvertime, salary, overtime);
-            }
+            OvertimeResult result = overtimeCalculator.compute(staffOvertime.getStaffId(), staffOvertime);
+            staffOvertime.setTypeNum(result.typeNum())
+                    .setStatus(result.status())
+                    .setTotalOvertime(result.totalOvertime())
+                    .setOvertimeSalary(result.overtimeSalary());
             QueryWrapper<StaffOvertime> queryWrapper = new QueryWrapper<>();
-            queryWrapper.eq("staff_id", staff.getId()).eq("overtime_date",
+            queryWrapper.eq("staff_id", staffOvertime.getStaffId()).eq("overtime_date",
                     staffOvertime.getOvertimeDate());
             if (!update(staffOvertime, queryWrapper) || save(staffOvertime)) {
                 return Response.error(BusinessStatusEnum.DATA_IMPORT_ERROR);
             }
-
         }
         return Response.success();
-    }
-
-    /**
-     * 计算员工的加班工资
-     *
-     * @param staffOvertime
-     * @param totalOvertime
-     * @param salary
-     * @param overtime
-     */
-    private void calculateOvertimeSalary(StaffOvertime staffOvertime, BigDecimal totalOvertime, Salary salary, Overtime overtime) {
-        // 如果以小时计算加班费
-        if (overtime.getCountType() == 0) {
-            // 当以小时为单位计算加班费时，加班时间不应该小于2小时；否则没有加班费
-            if (totalOvertime.compareTo(new BigDecimal(2)) != -1) {
-                staffOvertime.setOvertimeSalary(salary.getHourSalary().multiply(overtime.getSalaryMultiple()).multiply(totalOvertime).add(overtime.getBonus()));
-            } else {
-                staffOvertime.setOvertimeSalary(new BigDecimal(0));
-            }
-        } else {
-            // 当以日为单位计算加班费时，当天的加班时间不应该小于8小时；否则没有加班费
-            if (totalOvertime.compareTo(new BigDecimal(8)) != -1) {
-                staffOvertime.setOvertimeSalary(salary.getDaySalary().multiply(overtime.getSalaryMultiple()).add(overtime.getBonus()));
-            } else {
-                staffOvertime.setOvertimeSalary(new BigDecimal(0));
-            }
-        }
-    }
-
-
-
-
-
-    /**
-     * 计算员工的加班时间
-     *
-     * @param staffOvertime
-     * @return
-     */
-    private BigDecimal calculateTotalOvertime(StaffOvertime staffOvertime) {
-        long morDiff = staffOvertime.getMorEndTime().getTime() - staffOvertime.getMorStartTime().getTime();
-        long aftDiff = staffOvertime.getAftEndTime().getTime() - staffOvertime.getAftStartTime().getTime();
-        return BigDecimal.valueOf((morDiff + aftDiff) / (1000 * 60 * 60.0));
     }
 
     public ResponseDTO queryByStaffIdAndDate(Integer id, String date) {
@@ -332,30 +250,13 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
      * @return
      */
     public ResponseDTO setOvertime(StaffOvertime staffOvertime) {
+        OvertimeResult result = overtimeCalculator.compute(staffOvertime.getStaffId(), staffOvertime);
+        staffOvertime.setTypeNum(result.typeNum())
+                .setStatus(result.status())
+                .setTotalOvertime(result.totalOvertime())
+                .setOvertimeSalary(result.overtimeSalary());
         QueryWrapper<StaffOvertime> queryWrapper = new QueryWrapper<>();
-        Staff staff = this.staffMapper.selectById(staffOvertime.getStaffId());
-        // 设置加班状态
-        staffOvertime.setStatus(OvertimeStatusEnum.OVERTIME);
-        // 以最近的一次工资为准
-        Salary salary = this.salaryMapper.selectList(new QueryWrapper<Salary>().eq("staff_id", staff.getId()).orderByDesc("month")).get(0);
-        Overtime overtime = this.overtimeMapper.selectOne(new QueryWrapper<Overtime>()
-                .eq("type_num", staffOvertime.getTypeNum())
-                .eq("dept_id", staff.getDeptId()));
-        // 如果是休息日加班
-        if (staffOvertime.getTypeNum() == OvertimeEnum.DAY_OFF_OVERTIME) {
-            // 如果不调休
-            if (overtime.getTimeOffFlag() == 0) {
-                calculateOvertimeSalary(staffOvertime, staffOvertime.getTotalOvertime(), salary, overtime);
-            } else {
-                // 当调休时，每天的加班时间不应该小于8小时，才有补休；否则没有补休
-                if (staffOvertime.getTotalOvertime().compareTo(new BigDecimal(8)) != -1) {
-                    staffOvertime.setStatus(OvertimeStatusEnum.TIME_OFF);
-                }
-            }
-        } else {
-            calculateOvertimeSalary(staffOvertime, staffOvertime.getTotalOvertime(), salary, overtime);
-        }
-        queryWrapper.eq("staff_id", staff.getId()).eq("overtime_date",
+        queryWrapper.eq("staff_id", staffOvertime.getStaffId()).eq("overtime_date",
                 staffOvertime.getOvertimeDate());
         if (update(staffOvertime, queryWrapper) || save(staffOvertime)) {
             return Response.success();
@@ -445,36 +346,13 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
                         continue;
                     }
                     StaffOvertime entity = toEntity(row);
-                    entity.setStatus(OvertimeStatusEnum.OVERTIME);
-                    BigDecimal totalOvertime = calculateTotalOvertime(entity);
-                    entity.setTotalOvertime(totalOvertime);
-
-                    Salary salary = salaryCache.computeIfAbsent(staff.getId(),
-                            id -> salaryMapper.selectList(new QueryWrapper<Salary>()
-                                    .eq("staff_id", id).orderByDesc("month")).stream().findFirst().orElse(null));
-
-                    OvertimeEnum overtimeType;
-                    if (datetimeUtil.isHoliday(entity.getOvertimeDate())) {
-                        overtimeType = OvertimeEnum.HOLIDAY_OVERTIME;
-                    } else if (DateUtil.isWeekend(DateUtil.date(entity.getOvertimeDate()))) {
-                        overtimeType = OvertimeEnum.DAY_OFF_OVERTIME;
-                    } else {
-                        overtimeType = OvertimeEnum.WORKDAY_OVERTIME;
-                    }
-                    entity.setTypeNum(overtimeType);
-
-                    String configKey = staff.getDeptId() + "_" + overtimeType.getCode();
-                    Overtime overtime = overtimeConfigCache.computeIfAbsent(configKey,
-                            k -> overtimeMapper.selectOne(new QueryWrapper<Overtime>()
-                                    .eq("type_num", overtimeType).eq("dept_id", staff.getDeptId())));
-
-                    if (overtimeType == OvertimeEnum.DAY_OFF_OVERTIME
-                            && overtime != null && overtime.getTimeOffFlag() == 1
-                            && totalOvertime.compareTo(new BigDecimal(8)) >= 0) {
-                        entity.setStatus(OvertimeStatusEnum.TIME_OFF);
-                    } else if (overtime != null) {
-                        calculateOvertimeSalary(entity, totalOvertime, salary, overtime);
-                    }
+                    // 加班类型由日期分类得出（无人工指定）
+                    OvertimeResult result = overtimeCalculator.compute(row.getStaffId(), entity,
+                            staffMap, overtimeConfigCache, salaryCache);
+                    entity.setTypeNum(result.typeNum())
+                            .setStatus(result.status())
+                            .setTotalOvertime(result.totalOvertime())
+                            .setOvertimeSalary(result.overtimeSalary());
                     validList.add(entity);
                 } catch (Exception e) {
                     errorCollector.accept(new FileTaskError()
