@@ -1,6 +1,7 @@
 package com.qiujie.knowledge.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
@@ -48,10 +49,12 @@ public class KnowledgeDocument implements Serializable {
     private String previewText;
 
     /** 上传完成时间 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
     @TableField("upload_time")
     private LocalDateTime uploadTime;
 
     /** 处理完成时间 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
     @TableField("process_time")
     private LocalDateTime processTime;
 
@@ -61,9 +64,11 @@ public class KnowledgeDocument implements Serializable {
     @TableField("staff_id")
     private Integer staffId;
 
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
     @TableField("create_time")
     private LocalDateTime createTime;
 
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
     @TableField("update_time")
     private LocalDateTime updateTime;
 

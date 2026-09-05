@@ -17,6 +17,7 @@ import com.qiujie.dto.OvertimeImportRow;import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
 import com.qiujie.entity.*;
 import com.qiujie.enums.*;
+import com.qiujie.filetask.AsyncFileTasks;
 import com.qiujie.mapper.StaffMapper;
 import com.qiujie.mapper.StaffOvertimeMapper;
 import com.qiujie.overtime.OvertimeCalculator;
@@ -62,6 +63,9 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
 
     @Autowired
     private FileTaskCoordinator fileTaskCoordinator;
+
+    @Autowired
+    private AsyncFileTasks asyncFileTasks;
 
     @Autowired
     private SecurityUtil securityUtil;
@@ -272,16 +276,12 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
 
     public ResponseDTO createImportTask(String uploadId) {
         String mergedKey = fileUploadService.completeUpload(uploadId);
-        FileTaskCoordinator.TaskSubmission submission = fileTaskCoordinator.submitImport(
-                new FileTaskCoordinator.ImportCommand(
-                        TaskModuleEnum.STAFF_OVERTIME,
-                        "overtime_import.xlsx",
-                        mergedKey,
-                        null,
-                        securityUtil.getCurrentOperatorId()),
-                new OvertimeImportHandler(),
+        AsyncFileTasks.ImportRequest<OvertimeImportRow> request = new AsyncFileTasks.ImportRequest<>(
+                TaskModuleEnum.STAFF_OVERTIME, "overtime_import.xlsx", mergedKey, null,
+                securityUtil.getCurrentOperatorId(), new OvertimeImportHandler(),
                 new FlexibleExcelImportReader<>(2, TaskModuleEnum.STAFF_OVERTIME,
                         OvertimeImportRow.class, aiHeaderMatcher));
+        com.qiujie.filetask.TaskSnapshot submission = asyncFileTasks.submitImport(request);
         Map<String, Object> data = new HashMap<>();
         data.put("taskId", submission.taskId());
         return Response.success("已提交", data);
@@ -290,13 +290,10 @@ public class StaffOvertimeService extends ServiceImpl<StaffOvertimeMapper, Staff
     public ResponseDTO createExportTask(String month, String filename) {
         Map<String, String> params = new HashMap<>();
         params.put("month", month);
-        FileTaskCoordinator.TaskSubmission submission = fileTaskCoordinator.submitExport(
-                new FileTaskCoordinator.ExportCommand(
-                        TaskModuleEnum.STAFF_OVERTIME,
-                        filename,
-                        JSON.toJSONString(params),
-                        securityUtil.getCurrentOperatorId()),
-                new OvertimeExportHandler());
+        AsyncFileTasks.ExportRequest<OvertimeMonthVO> request = new AsyncFileTasks.ExportRequest<>(
+                TaskModuleEnum.STAFF_OVERTIME, filename, JSON.toJSONString(params),
+                securityUtil.getCurrentOperatorId(), new OvertimeExportHandler());
+        com.qiujie.filetask.TaskSnapshot submission = asyncFileTasks.submitExport(request);
         Map<String, Object> data = new HashMap<>();
         data.put("taskId", submission.taskId());
         return Response.success("已提交", data);

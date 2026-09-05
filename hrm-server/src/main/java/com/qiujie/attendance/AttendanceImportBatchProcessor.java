@@ -10,6 +10,7 @@ import com.qiujie.mapper.AttendanceMapper;
 import com.qiujie.mapper.DeptMapper;
 import com.qiujie.mapper.StaffMapper;
 import com.qiujie.util.DatetimeUtil;
+import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.Date;
@@ -39,6 +40,7 @@ import cn.hutool.core.date.DateUtil;
  * 避免两处逻辑漂移。
  * </p>
  */
+@Component
 public class AttendanceImportBatchProcessor {
 
     private static final int DB_BATCH_SIZE = 200;

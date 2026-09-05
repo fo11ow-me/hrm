@@ -1,6 +1,5 @@
 package com.qiujie.service;
 
-import cn.hutool.core.io.FileUtil;
 import com.alibaba.excel.ExcelWriter;
 import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.write.metadata.WriteSheet;
@@ -8,12 +7,13 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.qiujie.entity.FileTask;
 import com.qiujie.entity.FileTaskError;
 import com.qiujie.enums.TaskStatusEnum;
+import com.qiujie.filetask.ArtifactStore;
+import com.qiujie.filetask.TaskRepository;
 import com.qiujie.storage.MinioStorageService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -31,10 +31,13 @@ public class FileTaskEngine {
     private static final int EXPORT_PAGE_SIZE = 500;
 
     @Autowired
-    private FileTaskRuntimePort fileTaskRuntime;
+    private TaskRepository taskRepository;
 
     @Autowired
     private FileTaskErrorService fileTaskErrorService;
+
+    @Autowired
+    private ArtifactStore artifactStore;
 
     @Autowired
     private MinioStorageService storageService;
@@ -57,36 +60,36 @@ public class FileTaskEngine {
      */
     public <T> void runImport(Long taskId, ImportProcessor<T> processor,
                               ImportReader<T> reader) {
-        if (!fileTaskRuntime.claimRunning(taskId)) {
+        if (!taskRepository.claimRunning(taskId)) {
             return;
         }
-        FileTask task = fileTaskRuntime.getById(taskId);
+        FileTask task = taskRepository.getById(taskId);
         if (task == null) {
             return;
         }
         File sourceFile = null;
         boolean temporarySource = false;
         try {
-            sourceFile = resolveSourceFile(task.getSourceFilePath());
-            temporarySource = isDownloadedSource(task.getSourceFilePath());
+            sourceFile = artifactStore.resolveSource(task.getSourceFilePath());
+            temporarySource = artifactStore.isRemote(task.getSourceFilePath());
             reader.read(sourceFile, taskId,
                     batch -> processBatch(batch, taskId, processor));
 
-            FileTask finishedTask = fileTaskRuntime.getById(taskId);
+            FileTask finishedTask = taskRepository.getById(taskId);
             if (finishedTask != null && finishedTask.getProcessedCount() != null) {
                 // 流式读取完成后回填真实总量，前端进度显示准确
-                fileTaskRuntime.setTotalCount(taskId, finishedTask.getProcessedCount());
+                taskRepository.setTotalCount(taskId, finishedTask.getProcessedCount());
             }
             if (finishedTask != null && finishedTask.getFailCount() != null && finishedTask.getFailCount() > 0) {
-                fileTaskRuntime.generateErrorFile(taskId);
-                fileTaskRuntime.finish(taskId, TaskStatusEnum.PARTIAL_SUCCESS);
+                taskRepository.generateErrorFile(taskId);
+                taskRepository.finish(taskId, TaskStatusEnum.PARTIAL_SUCCESS);
             } else {
                 // 导入完全成功时立即删除源文件，避免敏感数据长期驻留磁盘
-                fileTaskRuntime.deleteSourceFile(taskId);
-                fileTaskRuntime.finish(taskId, TaskStatusEnum.SUCCESS);
+                taskRepository.deleteSourceFile(taskId);
+                taskRepository.finish(taskId, TaskStatusEnum.SUCCESS);
             }
         } catch (Exception e) {
-            fileTaskRuntime.fail(taskId, e);
+            taskRepository.fail(taskId, e);
         } finally {
             deleteTemporaryFile(sourceFile, temporarySource);
         }
@@ -103,7 +106,7 @@ public class FileTaskEngine {
             fileTaskErrorService.saveBatch(errors, DB_BATCH_SIZE);
         }
         int businessFailures = errors.size() - batch.errors().size();
-        fileTaskRuntime.increaseProgress(taskId, 0, parsedRows + batch.errors().size(),
+        taskRepository.increaseProgress(taskId, 0, parsedRows + batch.errors().size(),
                 parsedRows - businessFailures, errors.size());
     }
 
@@ -117,13 +120,13 @@ public class FileTaskEngine {
      * @param exportName       导出文件名
      */
     public <T> void runExport(Long taskId, ExportProcessor<T> processor, String queryParamsJson, String exportName) {
-        if (!fileTaskRuntime.claimRunning(taskId)) {
+        if (!taskRepository.claimRunning(taskId)) {
             return;
         }
         File resultFile = null;
         ExcelWriter excelWriter = null;
         try {
-            resultFile = fileTaskRuntime.buildTaskFile("task-result", exportName);
+            resultFile = artifactStore.createTaskFile("task-result", exportName);
             excelWriter = EasyExcel.write(resultFile, processor.getRowClass()).build();
             WriteSheet writeSheet = EasyExcel.writerSheet("data").build();
             int current = 1;
@@ -136,26 +139,22 @@ public class FileTaskEngine {
                 }
                 excelWriter.write(list, writeSheet);
                 if (current == 1) {
-                    fileTaskRuntime.setTotalCount(taskId, (int) page.getTotal());
+                    taskRepository.setTotalCount(taskId, (int) page.getTotal());
                 }
-                fileTaskRuntime.increaseProgress(taskId, 0, list.size(), list.size(), 0);
+                taskRepository.increaseProgress(taskId, 0, list.size(), list.size(), 0);
                 current++;
             } while (current <= page.getPages());
-            fileTaskRuntime.setResultFile(taskId, fileTaskRuntime.uploadToMinio(resultFile, "task-result"));
+            taskRepository.setResultFile(taskId, artifactStore.upload(resultFile, "task-result"));
             resultFile = null;
-            fileTaskRuntime.finish(taskId, TaskStatusEnum.SUCCESS);
+            taskRepository.finish(taskId, TaskStatusEnum.SUCCESS);
         } catch (Exception e) {
-            fileTaskRuntime.fail(taskId, e);
+            taskRepository.fail(taskId, e);
         } finally {
             if (excelWriter != null) {
                 excelWriter.finish();
             }
             deleteTemporaryFile(resultFile, true);
         }
-    }
-
-    private boolean isDownloadedSource(String path) {
-        return path != null && !path.contains(File.separator) && !path.startsWith("/");
     }
 
     private void deleteTemporaryFile(File file, boolean temporary) {
@@ -165,19 +164,6 @@ public class FileTaskEngine {
     }
 
     /**
-     * 解析源文件。若为 MinIO key 则下载到临时文件，否则直接返回本地文件引用。
+     * 解析源文件已委托给 ArtifactStore。
      */
-    private File resolveSourceFile(String path) {
-        if (path == null || path.contains(File.separator) || path.startsWith("/")) {
-            return new File(path);
-        }
-        File tempFile = new File(System.getProperty("java.io.tmpdir") + File.separator + "hrm", path);
-        tempFile.getParentFile().mkdirs();
-        try (InputStream in = storageService.get(path)) {
-            FileUtil.writeFromStream(in, tempFile);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to download source file from MinIO: " + path, e);
-        }
-        return tempFile;
-    }
 }

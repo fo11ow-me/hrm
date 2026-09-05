@@ -6,6 +6,7 @@ import com.qiujie.dto.AttendanceImportRow;
 import com.qiujie.entity.FileTask;
 import com.qiujie.entity.FileTaskError;
 import com.qiujie.enums.TaskModuleEnum;
+import com.qiujie.filetask.ArtifactStore;
 import com.qiujie.enums.TaskStatusEnum;
 import com.qiujie.util.TestExcelUtil;
 import org.junit.jupiter.api.AfterEach;
@@ -45,6 +46,9 @@ class FileTaskEngineUnitTest {
     @Mock
     private FileTaskErrorService fileTaskErrorService;
 
+    @Mock
+    private ArtifactStore artifactStore;
+
     @InjectMocks
     private FileTaskEngine fileTaskEngine;
 
@@ -56,6 +60,13 @@ class FileTaskEngineUnitTest {
     @BeforeEach
     void setUp() {
         when(fileTaskService.claimRunning(anyLong())).thenReturn(true);
+        lenient().when(artifactStore.resolveSource(anyString())).thenAnswer(invocation -> new File((String) invocation.getArgument(0)));
+        lenient().when(artifactStore.createTaskFile(anyString(), anyString())).thenAnswer(invocation -> {
+            File file = new File(tempDir.toFile(), invocation.getArgument(0) + "/result.xlsx");
+            file.getParentFile().mkdirs();
+            return file;
+        });
+        lenient().when(artifactStore.upload(any(File.class), anyString())).thenReturn("result-key");
     }
 
     @AfterEach
@@ -213,8 +224,8 @@ class FileTaskEngineUnitTest {
 
         File resultFile = new File(tempDir.toFile(), "task-result/test-uuid.xlsx");
         resultFile.getParentFile().mkdirs();
-        when(fileTaskService.buildTaskFile("task-result", "test.xlsx")).thenReturn(resultFile);
-        when(fileTaskService.uploadToMinio(any(File.class), anyString())).thenReturn("task-result/test-uuid.xlsx");
+        lenient().when(fileTaskService.buildTaskFile("task-result", "test.xlsx")).thenReturn(resultFile);
+        lenient().when(fileTaskService.uploadToMinio(any(File.class), anyString())).thenReturn("task-result/test-uuid.xlsx");
 
         List<AttendanceImportRow> data = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
@@ -246,8 +257,8 @@ class FileTaskEngineUnitTest {
 
         File resultFile = new File(tempDir.toFile(), "task-result/test-multi.xlsx");
         resultFile.getParentFile().mkdirs();
-        when(fileTaskService.buildTaskFile("task-result", "multi.xlsx")).thenReturn(resultFile);
-        when(fileTaskService.uploadToMinio(any(File.class), anyString())).thenReturn("task-result/test-multi.xlsx");
+        lenient().when(fileTaskService.buildTaskFile("task-result", "multi.xlsx")).thenReturn(resultFile);
+        lenient().when(fileTaskService.uploadToMinio(any(File.class), anyString())).thenReturn("task-result/test-multi.xlsx");
 
         List<AttendanceImportRow> page1Data = new ArrayList<>();
         for (int i = 0; i < 500; i++) page1Data.add(new AttendanceImportRow());
@@ -283,8 +294,8 @@ class FileTaskEngineUnitTest {
 
         File resultFile = new File(tempDir.toFile(), "task-result/test-empty.xlsx");
         resultFile.getParentFile().mkdirs();
-        when(fileTaskService.buildTaskFile("task-result", "empty.xlsx")).thenReturn(resultFile);
-        when(fileTaskService.uploadToMinio(any(File.class), anyString())).thenReturn("task-result/test-empty.xlsx");
+        lenient().when(fileTaskService.buildTaskFile("task-result", "empty.xlsx")).thenReturn(resultFile);
+        lenient().when(fileTaskService.uploadToMinio(any(File.class), anyString())).thenReturn("task-result/test-empty.xlsx");
 
         IPage<AttendanceImportRow> page = new Page<>(1, 500, 0);
         page.setRecords(new ArrayList<>());
@@ -307,7 +318,7 @@ class FileTaskEngineUnitTest {
 
         File resultFile = new File(tempDir.toFile(), "task-result/test-fail.xlsx");
         resultFile.getParentFile().mkdirs();
-        when(fileTaskService.buildTaskFile("task-result", "fail.xlsx")).thenReturn(resultFile);
+        lenient().when(fileTaskService.buildTaskFile("task-result", "fail.xlsx")).thenReturn(resultFile);
 
         @SuppressWarnings("unchecked")
         ExportProcessor<AttendanceImportRow> processor = mock(ExportProcessor.class);

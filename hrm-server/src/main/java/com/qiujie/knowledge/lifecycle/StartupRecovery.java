@@ -9,6 +9,7 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 
 import java.util.List;
+import java.util.concurrent.Executor;
 
 /**
  * 启动恢复（模块内部组件）：覆盖三个崩溃窗口。
@@ -29,49 +30,43 @@ final class StartupRecovery implements ApplicationRunner {
     private final IngestionJobMapper jobMapper;
     private final IngestionPipeline pipeline;
     private final DocumentPurgeHandler purgeHandler;
+    private final Executor executor;
 
     StartupRecovery(KnowledgeDocumentMapper documentMapper,
                     IngestionJobMapper jobMapper,
                     IngestionPipeline pipeline,
-                    DocumentPurgeHandler purgeHandler) {
+                    DocumentPurgeHandler purgeHandler,
+                    Executor executor) {
         this.documentMapper = documentMapper;
         this.jobMapper = jobMapper;
         this.pipeline = pipeline;
         this.purgeHandler = purgeHandler;
+        this.executor = executor;
     }
 
     @Override
     public void run(ApplicationArguments args) {
-        int affected = recover();
-        if (affected > 0) {
-            log.info("Recovered {} documents on startup (failed/rerun/purged)", affected);
-        }
-    }
-
-    /** 执行四步恢复，返回受影响（标失败/续跑/重清理）的文档数。 */
-    int recover() {
-        int affected = 0;
-
-        // 1. 遗留 RUNNING 作业收尾
+        // 步骤 1-2：快速 SQL 更新，同步执行
         jobMapper.markStaleRunningAsFailed(INTERRUPT_REASON);
+        int markedFailed = documentMapper.markStaleProcessingAsFailed(INTERRUPT_REASON);
 
-        // 2. 执行中崩溃：PROCESSING → FAILED + 原因
-        affected += documentMapper.markStaleProcessingAsFailed(INTERRUPT_REASON);
-
-        // 3. 未启动崩溃：UPLOADED 续跑（ETL 从未开始；并发由 claim CAS 仲裁）
-        List<KnowledgeDocument> uploaded = documentMapper.selectLiveUploaded();
-        for (KnowledgeDocument doc : uploaded) {
-            pipeline.run(doc.getId());
-            affected++;
-        }
-
-        // 4. 已删孤儿重 purge（幂等）
-        List<KnowledgeDocument> deleted = documentMapper.selectDeleted();
-        for (KnowledgeDocument doc : deleted) {
-            purgeHandler.purge(doc.getId(), doc.getName());
-            affected++;
-        }
-
-        return affected;
+        // 步骤 3-4：涉及远程调用（MinIO/PG/HTTP），异步执行，不阻塞启动
+        executor.execute(() -> {
+            int recovered = 0;
+            List<KnowledgeDocument> uploaded = documentMapper.selectLiveUploaded();
+            for (KnowledgeDocument doc : uploaded) {
+                pipeline.run(doc.getId());
+                recovered++;
+            }
+            List<KnowledgeDocument> deleted = documentMapper.selectDeleted();
+            for (KnowledgeDocument doc : deleted) {
+                purgeHandler.purge(doc.getId(), doc.getName());
+                recovered++;
+            }
+            if (markedFailed + recovered > 0) {
+                log.info("Recovered {} documents on startup (failed={}, rerun/purged={})",
+                        markedFailed + recovered, markedFailed, recovered);
+            }
+        });
     }
 }

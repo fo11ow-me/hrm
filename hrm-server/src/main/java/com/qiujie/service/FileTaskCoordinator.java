@@ -1,5 +1,7 @@
 package com.qiujie.service;
 
+import com.qiujie.filetask.AsyncFileTasks;
+import com.qiujie.filetask.TaskSnapshot;
 import com.qiujie.entity.FileTask;
 import com.qiujie.enums.TaskModuleEnum;
 import com.qiujie.enums.TaskTypeEnum;
@@ -18,7 +20,7 @@ import java.io.IOException;
  * </p>
  */
 @Service
-public class FileTaskCoordinator {
+public class FileTaskCoordinator implements AsyncFileTasks {
 
     private final FileTaskService fileTaskService;
     private final FileTaskEngine fileTaskEngine;
@@ -32,7 +34,23 @@ public class FileTaskCoordinator {
         this.fileTaskExecutor = fileTaskExecutor;
     }
 
-    /** 导入任务命令。sourceFilePath 可以是本地路径或对象存储 key。 */
+    @Override
+    public <T> TaskSnapshot submitImport(AsyncFileTasks.ImportRequest<T> request) {
+        TaskSubmission result = request.reader() == null
+                ? submitImport(new ImportCommand(request.module(), request.fileName(), request.sourceFilePath(),
+                        request.queryParams(), request.operatorId()), request.processor())
+                : submitImport(new ImportCommand(request.module(), request.fileName(), request.sourceFilePath(),
+                        request.queryParams(), request.operatorId()), request.processor(), request.reader());
+        return new TaskSnapshot(result.taskId(), result.snapshot());
+    }
+
+    @Override
+    public <T> TaskSnapshot submitExport(AsyncFileTasks.ExportRequest<T> request) {
+        TaskSubmission result = submitExport(new ExportCommand(request.module(), request.fileName(),
+                request.queryParams(), request.operatorId()), request.processor());
+        return new TaskSnapshot(result.taskId(), result.snapshot());
+    }
+    /** 导入任务命令。 */
     public record ImportCommand(TaskModuleEnum module,
                                 String fileName,
                                 String sourceFilePath,

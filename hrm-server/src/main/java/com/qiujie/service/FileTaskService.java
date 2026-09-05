@@ -1,7 +1,5 @@
 package com.qiujie.service;
 
-import cn.hutool.core.io.FileUtil;
-import cn.hutool.core.util.IdUtil;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.ExcelWriter;
@@ -18,6 +16,7 @@ import com.qiujie.enums.TaskModuleEnum;
 import com.qiujie.enums.TaskStatusEnum;
 import com.qiujie.enums.TaskTypeEnum;
 import com.qiujie.entity.FileTask;
+import com.qiujie.filetask.ArtifactStore;
 import com.qiujie.entity.FileTaskError;
 import com.qiujie.mapper.FileTaskMapper;
 import com.qiujie.storage.MinioStorageService;
@@ -34,7 +33,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -44,13 +42,16 @@ import java.util.stream.Collectors;
 
 @Service
 public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask>
-        implements FileTaskRuntimePort {
+        implements com.qiujie.filetask.TaskRepository {
 
     private static final int ERROR_EXPORT_PAGE_SIZE = 1000;
     private static final String TEMP_DIR = System.getProperty("java.io.tmpdir") + File.separator + "hrm";
 
     @Autowired
     private MinioStorageService storageService;
+
+    @Autowired
+    private ArtifactStore artifactStore;
 
     @Autowired
     private FileTaskMapper fileTaskMapper;
@@ -64,6 +65,13 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask>
     @Autowired
     private SecurityUtil securityUtil;
 
+    @Override
+    public FileTask create(TaskTypeEnum taskType, TaskModuleEnum module, String fileName, String sourceFilePath,
+                           String queryParams, Integer operatorId) {
+        return createTask(taskType, module, fileName, sourceFilePath, queryParams, operatorId);
+    }
+
+    @Override
     public FileTask getById(Long id) {
         return super.getById(id);
     }
@@ -196,9 +204,11 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask>
         pushTaskEvent(id);
     }
 
+    @Override
     public void fail(Long id, Exception e) {
-        fail(id, e.getMessage());
+        fail(id, e == null ? null : e.getMessage());
     }
+
 
     public void fail(Long id, String message) {
         if (message != null && message.length() > 1000) {
@@ -212,35 +222,17 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask>
         pushTaskEvent(id);
     }
 
-    /**
-     * 在临时目录创建任务文件，供 EasyExcel 流式读写。
-     * 临时文件在任务完成后由调用方负责上传至 MinIO 并删除。
-     */
     public File buildTaskFile(String subDir, String originalFilename) {
-        String extName = FileUtil.extName(originalFilename);
-        String filename = IdUtil.fastSimpleUUID();
-        if (extName != null && !"".equals(extName)) {
-            filename = filename + "." + extName;
-        }
-        File dir = new File(TEMP_DIR, subDir);
-        if (!dir.exists()) {
-            dir.mkdirs();
-        }
-        return new File(dir, filename);
+        return artifactStore.createTaskFile(subDir, originalFilename);
     }
 
-    /**
-     * 将本地临时文件上传至 MinIO，返回存储 key，并删除临时文件。
-     */
+    /** 将本地临时文件上传至 MinIO，返回存储 key。 */
     public String uploadToMinio(File file, String subDir) {
-        String key = subDir + "/" + file.getName();
-        storageService.put(key, FileUtil.readBytes(file));
-        file.delete();
-        return key;
+        return artifactStore.upload(file, subDir);
     }
 
     public void generateErrorFile(Long taskId) {
-        File errorFile = buildTaskFile("task-error", "import-errors.xlsx");
+        File errorFile = artifactStore.createTaskFile("task-error", "import-errors.xlsx");
         ExcelWriter excelWriter = EasyExcel.write(errorFile, FileTaskErrorExportRow.class).build();
         try {
             WriteSheet writeSheet = EasyExcel.writerSheet("errors").build();
@@ -265,7 +257,7 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask>
         } finally {
             excelWriter.finish();
         }
-        String key = uploadToMinio(errorFile, "task-error");
+        String key = artifactStore.upload(errorFile, "task-error");
         setErrorFile(taskId, key);
     }
 
@@ -284,32 +276,14 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask>
             writeErrorResponse(response, HttpServletResponse.SC_NOT_FOUND, "文件不存在");
             return;
         }
-        // 兼容旧数据：本地临时文件路径回退
-        if (isLocalPath(key)) {
-            File file = new File(key);
-            if (!file.exists() || !file.isFile()) {
-                writeErrorResponse(response, HttpServletResponse.SC_NOT_FOUND, "文件不存在或已被清理");
-                return;
-            }
-            try (InputStream in = Files.newInputStream(file.toPath());
-                 OutputStream out = response.getOutputStream()) {
-                byte[] buffer = new byte[8192];
-                int len;
-                while ((len = in.read(buffer)) != -1) {
-                    out.write(buffer, 0, len);
-                }
-                out.flush();
-            }
-            return;
-        }
-        if (!storageService.exists(key)) {
-            writeErrorResponse(response, HttpServletResponse.SC_NOT_FOUND, "文件不存在");
+        if (!artifactStore.exists(key)) {
+            writeErrorResponse(response, HttpServletResponse.SC_NOT_FOUND, "文件不存在或已被清理");
             return;
         }
         String downloadName = resolveDownloadName(fileTask, fileType);
         response.addHeader("Content-Type", "application/octet-stream;charset=utf-8");
         response.addHeader("Content-Disposition", "attachment;filename=" + URLEncoder.encode(downloadName, StandardCharsets.UTF_8));
-        try (InputStream in = storageService.get(key);
+        try (InputStream in = artifactStore.open(key);
              OutputStream out = response.getOutputStream()) {
             byte[] buffer = new byte[8192];
             int len;
@@ -327,9 +301,9 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask>
         queryWrapper.lt("create_time", Timestamp.valueOf(expireTime));
         List<FileTask> expiredTasks = list(queryWrapper);
         for (FileTask task : expiredTasks) {
-            deleteIfExists(task.getSourceFilePath());
-            deleteIfExists(task.getResultFilePath());
-            deleteIfExists(task.getErrorFilePath());
+            artifactStore.delete(task.getSourceFilePath());
+            artifactStore.delete(task.getResultFilePath());
+            artifactStore.delete(task.getErrorFilePath());
             fileTaskErrorService.remove(new QueryWrapper<FileTaskError>().eq("task_id", task.getId()));
             removeById(task.getId());
         }
@@ -338,23 +312,7 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask>
     public void deleteSourceFile(Long taskId) {
         FileTask task = getById(taskId);
         if (task != null) {
-            deleteIfExists(task.getSourceFilePath());
-        }
-    }
-
-    private void deleteIfExists(String path) {
-        if (path == null || "".equals(path)) {
-            return;
-        }
-        if (isLocalPath(path)) {
-            File file = new File(path);
-            if (file.exists() && file.isFile()) {
-                file.delete();
-            }
-            return;
-        }
-        if (storageService.exists(path)) {
-            storageService.delete(path);
+            artifactStore.delete(task.getSourceFilePath());
         }
     }
 
@@ -371,10 +329,6 @@ public class FileTaskService extends ServiceImpl<FileTaskMapper, FileTask>
 
     private Integer getCurrentOperatorId() {
         return securityUtil.getCurrentOperatorId();
-    }
-
-    private boolean isLocalPath(String path) {
-        return path.contains(File.separator) || path.startsWith("/");
     }
 
     private String resolveDownloadKey(FileTask fileTask, String fileType) {

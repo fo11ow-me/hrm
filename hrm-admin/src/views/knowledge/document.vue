@@ -46,8 +46,8 @@
           </template>
         </el-table-column>
         <el-table-column prop="chunkCount" label="分块数" min-width="80" align="center" />
-        <el-table-column prop="createTime" label="上传时间" min-width="160" align="center" />
-        <el-table-column label="操作" min-width="180" align="center">
+        <el-table-column prop="uploadTime" label="上传时间" min-width="160" align="center" />
+        <el-table-column label="操作" min-width="220" align="center">
           <template slot-scope="scope">
             <el-button size="mini" type="primary" @click="handleView(scope.row)">查看</el-button>
             <el-button

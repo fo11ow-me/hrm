@@ -7,6 +7,7 @@ import com.qiujie.entity.FileTask;
 import com.qiujie.enums.TaskModuleEnum;
 import com.qiujie.enums.TaskStatusEnum;
 import com.qiujie.enums.TaskTypeEnum;
+import com.qiujie.filetask.ArtifactStore;
 import com.qiujie.mapper.FileTaskMapper;
 import com.qiujie.util.SecurityUtil;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,12 +53,16 @@ class FileTaskServiceUnitTest {
     @Mock
     private com.qiujie.storage.MinioStorageService storageService;
 
+    @Mock
+    private ArtifactStore artifactStore;
+
     @InjectMocks
     private FileTaskService fileTaskService;
 
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(fileTaskService, "baseMapper", fileTaskMapper);
+        lenient().doNothing().when(artifactStore).delete(anyString());
     }
 
     // ==================== createTask ====================
@@ -157,6 +162,11 @@ class FileTaskServiceUnitTest {
 
     @Test
     void buildTaskFile_ShouldCreateFileInCorrectDirectory() {
+        when(artifactStore.createTaskFile("task-source", "test.xlsx")).thenAnswer(invocation -> {
+            File file = new File(System.getProperty("java.io.tmpdir"), "uuid.xlsx");
+            file.getParentFile().mkdirs();
+            return file;
+        });
         File file = fileTaskService.buildTaskFile("task-source", "test.xlsx");
         assertThat(file).isNotNull();
         assertThat(file.getParentFile()).exists();

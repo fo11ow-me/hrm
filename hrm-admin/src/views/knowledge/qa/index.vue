@@ -131,7 +131,7 @@ export default {
 </script>
 
 <style scoped>
-.qa-container { height: 100%; display: flex; }
+.qa-container { height: 90%; display: flex; padding-bottom: 20px; }
 .qa-main { flex: 1; display: flex; flex-direction: column; }
 .qa-messages { flex: 1; overflow-y: auto; padding: 16px; }
 .qa-empty { text-align: center; padding-top: 120px; color: #909399; }

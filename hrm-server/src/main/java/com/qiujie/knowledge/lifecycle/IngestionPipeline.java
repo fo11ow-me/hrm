@@ -75,8 +75,6 @@ public final class IngestionPipeline {
                 .setStaffId(doc.getStaffId())
                 .setJobType("INGEST_DOCUMENT")
                 .setStatus("RUNNING")
-                .setRetryCount(0)
-                .setMaxRetries(3)
                 .setStartedAt(LocalDateTime.now())
                 .setCreateTime(LocalDateTime.now());
         jobMapper.insert(job);

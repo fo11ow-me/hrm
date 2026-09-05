@@ -275,8 +275,9 @@ export default {
 .manage {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 90%;
   min-height: 0;
+  padding-bottom: 20px;
 }
 
 .toolbar {

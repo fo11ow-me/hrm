@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
@@ -56,6 +56,9 @@ public class FileUploadService {
     @Autowired
     private MinioStorageService storageService;
 
+    @Autowired
+    private TransactionTemplate transactionTemplate;
+
     /**
      * 阶段1：初始化上传会话。
      *
@@ -73,10 +76,10 @@ public class FileUploadService {
      * @param handler   业务回调处理器，知识库传入 KbUploadCompletionHandler，通用导入传入 null
      * @return uploadId + 可选 chunkSize/chunkCount/instantUpload/resumed/uploadedChunks
      */
-    @Transactional
     public ResponseDTO initUpload(String fileName, String fileExt, Long fileSize,
                                    String fileHash, Long chunkSize,
                                    Integer staffId, UploadCompletionHandler handler) {
+        return transactionTemplate.execute(ts -> {
         // 文件大小校验
         if (fileSize > MAX_FILE_SIZE) {
             return Response.error("文件大小超过限制，最大256MB");
@@ -141,13 +144,14 @@ public class FileUploadService {
         result.put("chunkSize", chunkSize);
         result.put("chunkCount", chunkCount);
         return Response.success(result);
+        });
     }
 
     /**
      * 阶段2：上传单个分片（幂等），校验分片哈希确保传输完整性。
      */
-    @Transactional
     public ResponseDTO uploadChunk(String uploadId, Integer chunkIndex, String chunkHash, MultipartFile file) {
+        return transactionTemplate.execute(ts -> {
         KbUploadSession session = sessionMapper.selectById(uploadId);
         if (session == null || session.getExpiresAt().isBefore(LocalDateTime.now())) {
             return Response.error("上传会话不存在或已过期");
@@ -188,94 +192,77 @@ public class FileUploadService {
             log.error("分片上传失败: uploadId={}, chunkIndex={}", uploadId, chunkIndex, e);
             return Response.error("分片上传失败");
         }
+        });
     }
 
     /**
-     * 阶段3（无 handler）：仅合并分片，返回 MinIO key。
-     * 供导入任务等自行创建 FileTask 的场景使用。
+     * 合并分片（公共逻辑）。验证会话 → 检查分片完整性 → composeObject → 更新会话状态。
+     *
+     * @param uploadId 上传会话 ID
+     * @param keyPrefix mergedKey 路径前缀（如 "task-source" 或 handler.getStoragePrefix()）
+     * @return 合并后的文件 key（MinIO 对象路径）
      */
-    @Transactional
-    public String completeUpload(String uploadId) {
+    private String mergeChunks(String uploadId, String keyPrefix) {
         KbUploadSession session = sessionMapper.selectById(uploadId);
         if (session == null) {
             throw new RuntimeException("上传会话不存在");
         }
-        // 直接上传已完成，无需合并分片
-        if ("COMPLETED".equals(session.getStatus()) && session.getMergedObjectKey() != null) {
-            return session.getMergedObjectKey();
-        }
+
         List<KbUploadChunk> chunks = chunkMapper.selectList(
                 new QueryWrapper<KbUploadChunk>().eq("upload_id", uploadId).orderByAsc("chunk_index"));
         if (chunks.size() != session.getChunkCount()) {
             throw new RuntimeException("分片不完整，已上传 " + chunks.size() + "/" + session.getChunkCount());
-        }
-        session.setStatus("COMPLETING");
-        sessionMapper.updateById(session);
-
-        String mergedKey = String.format("task-source/%d/%s/%s.%s",
-                session.getStaffId(), uploadId,
-                IdUtil.fastSimpleUUID().substring(2, 22),
-                session.getFileExt());
-        try {
-            List<String> sourceKeys = chunks.stream()
-                    .map(KbUploadChunk::getStoragePath).collect(Collectors.toList());
-            storageService.composeObject(sourceKeys, mergedKey, "application/octet-stream");
-            session.setMergedObjectKey(mergedKey);
-            session.setStatus("COMPLETED");
-            sessionMapper.updateById(session);
-            return mergedKey;
-        } catch (Exception e) {
-            log.error("合并分片失败: uploadId={}", uploadId, e);
-            try { storageService.delete(mergedKey); } catch (Exception ignored) {}
-            throw new RuntimeException("合并分片失败", e);
-        }
-    }
-
-    /**
-     * 阶段3：完成上传，合并分片并通过 handler 执行业务逻辑。
-     */
-    @Transactional
-    public ResponseDTO completeUpload(String uploadId, UploadCompletionHandler handler) {
-        KbUploadSession session = sessionMapper.selectById(uploadId);
-        if (session == null) {
-            return Response.error("上传会话不存在");
-        }
-
-        List<KbUploadChunk> chunks = chunkMapper.selectList(
-                new QueryWrapper<KbUploadChunk>().eq("upload_id", uploadId).orderByAsc("chunk_index"));
-        if (chunks.size() != session.getChunkCount()) {
-            return Response.error("分片不完整，已上传 " + chunks.size() + "/" + session.getChunkCount());
         }
 
         session.setStatus("COMPLETING");
         sessionMapper.updateById(session);
 
         String mergedKey = String.format("%s/%d/%s/%s.%s",
-                handler.getStoragePrefix(), session.getStaffId(), uploadId,
+                keyPrefix, session.getStaffId(), uploadId,
                 IdUtil.fastSimpleUUID().substring(2, 22),
                 session.getFileExt());
-        try {
-            List<String> sourceKeys = chunks.stream()
-                    .map(KbUploadChunk::getStoragePath).collect(Collectors.toList());
-            storageService.composeObject(sourceKeys, mergedKey, "application/octet-stream");
+        List<String> sourceKeys = chunks.stream()
+                .map(KbUploadChunk::getStoragePath).collect(Collectors.toList());
+        storageService.composeObject(sourceKeys, mergedKey, "application/octet-stream");
 
+        session.setMergedObjectKey(mergedKey);
+        session.setStatus("COMPLETED");
+        sessionMapper.updateById(session);
+        return mergedKey;
+    }
+
+    /**
+     * 阶段3（无 handler）：仅合并分片，返回 MinIO key。
+     * 供导入任务等自行创建 FileTask 的场景使用。
+     */
+    public String completeUpload(String uploadId) {
+        return transactionTemplate.execute(status -> {
+            KbUploadSession session = sessionMapper.selectById(uploadId);
+            if (session == null) {
+                throw new RuntimeException("上传会话不存在");
+            }
+            if ("COMPLETED".equals(session.getStatus()) && session.getMergedObjectKey() != null) {
+                return session.getMergedObjectKey();
+            }
+            return mergeChunks(uploadId, "task-source");
+        });
+    }
+
+    /**
+     * 阶段3：完成上传，合并分片并通过 handler 执行业务逻辑。
+     */
+    public ResponseDTO completeUpload(String uploadId, UploadCompletionHandler handler) {
+        return transactionTemplate.execute(status -> {
+            String mergedKey = mergeChunks(uploadId, handler.getStoragePrefix());
+            KbUploadSession session = sessionMapper.selectById(uploadId);
             UploadSessionInfo info = new UploadSessionInfo(
                     uploadId, session.getFileName(), session.getFileExt(),
                     session.getFileSize(), session.getFileHash(),
                     session.getStaffId(), session.getChunkCount());
             Map<String, Object> extra = handler.onComplete(mergedKey, info);
-
-            session.setMergedObjectKey(mergedKey);
-            session.setStatus("COMPLETED");
-            sessionMapper.updateById(session);
-
             if (extra == null) extra = new HashMap<>();
             return Response.success("上传完成", extra);
-        } catch (Exception e) {
-            log.error("合并分片失败: uploadId={}", uploadId, e);
-            try { storageService.delete(mergedKey); } catch (Exception ignored) {}
-            return Response.error("合并分片失败");
-        }
+        });
     }
 
     /**

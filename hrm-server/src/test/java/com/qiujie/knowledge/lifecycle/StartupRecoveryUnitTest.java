@@ -16,6 +16,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.Executor;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -52,7 +53,9 @@ class StartupRecoveryUnitTest {
                 new DocumentParserService(), new TextCleanupService(), chunkService);
         DocumentPurgeHandler purgeHandler = new DocumentPurgeHandler(documentMapper, chunkVectorStore, objectStore);
 
-        recovery = new StartupRecovery(documentMapper, jobMapper, pipeline, purgeHandler);
+        // 与生产装配一致复用文件任务线程池语义；同步执行便于断言
+        Executor syncExecutor = Runnable::run;
+        recovery = new StartupRecovery(documentMapper, jobMapper, pipeline, purgeHandler, syncExecutor);
     }
 
     @Test
@@ -78,10 +81,8 @@ class StartupRecoveryUnitTest {
         when(documentMapper.selectDeleted()).thenReturn(List.of(deletedDoc));
         objectStore.put("knowledge/5/x/孤儿.txt", "孤儿内容".getBytes(StandardCharsets.UTF_8));
 
-        int affected = recovery.recover();
+        recovery.run(null);
 
-        // 返回受影响文档数：1（标失败）+ 1（续跑）+ 1（重清理）
-        assertEquals(3, affected);
         // 步骤1：作业收尾
         verify(jobMapper).markStaleRunningAsFailed(anyString());
         // 步骤2：PROCESSING 标失败

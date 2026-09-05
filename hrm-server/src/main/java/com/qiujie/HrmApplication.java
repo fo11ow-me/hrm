@@ -11,7 +11,7 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 
 @MapperScan({"com.qiujie.mapper", "com.qiujie.assistant.mapper", "com.qiujie.knowledge.mapper"})
 @SpringBootApplication
-@EnableTransactionManagement // 事务
+@EnableTransactionManagement(proxyTargetClass = true) // CGLIB 代理确保实现类 @Transactional 生效
 @EnableScheduling
 @EnableAsync
 @EnableRetry

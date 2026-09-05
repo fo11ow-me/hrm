@@ -60,7 +60,8 @@ public class KnowledgeLifecycleConfig {
     public StartupRecovery startupRecovery(KnowledgeDocumentMapper documentMapper,
                                            IngestionJobMapper jobMapper,
                                            IngestionPipeline pipeline,
-                                           DocumentPurgeHandler purgeHandler) {
-        return new StartupRecovery(documentMapper, jobMapper, pipeline, purgeHandler);
+                                           DocumentPurgeHandler purgeHandler,
+                                           @Qualifier("fileTaskExecutor") Executor executor) {
+        return new StartupRecovery(documentMapper, jobMapper, pipeline, purgeHandler, executor);
     }
 }

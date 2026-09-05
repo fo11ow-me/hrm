@@ -54,9 +54,11 @@ export default {
 .tag {
   padding: 10px;
   margin-left: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 15px;
 
   .el-tag {
-    margin-right: 15px;
     cursor: pointer;
   }
 }

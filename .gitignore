@@ -36,14 +36,25 @@ replay_pid*.log
 *.sql
 !hrm-server/src/test/resources/sql/*.sql
 !hrm-server/src/main/resources/db/migration/*.sql
+!sql/schema/mysql/
+!sql/schema/mysql/*.sql
+!sql/schema/postgresql/
+!sql/schema/postgresql/*.sql
+/sql/migration/
+/sql/run_migration.sh
 *.rdb
-/sql/
+
+# Local scripts and generated documentation
 /scripts/
+docs/*
+!docs/screenshots/
+!docs/screenshots/*.png
 
 # Uploaded/runtime files
 file/
-docs/
 *.xlsx
+!examples/import/
+!examples/import/*.xlsx
 
 # IDE and agent files
 .idea/
@@ -73,6 +84,11 @@ docs/
 /nbbuild/
 /nbdist/
 /.nb-gradle/
+
+# 临时截图和文档
+/*.png
+/*.jpg
+/面试准备.md
 
 # 临时文件和重构备份
 tmp/

@@ -11,6 +11,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.qiujie.enums.TaskModuleEnum;
 import com.qiujie.attendance.AttendanceImportBatchProcessor;
+import com.qiujie.filetask.AsyncFileTasks;
 import com.qiujie.dto.AttendanceImportRow;
 import com.qiujie.dto.Response;
 import com.qiujie.dto.ResponseDTO;
@@ -79,6 +80,9 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
 
     @Autowired
     private FileTaskCoordinator fileTaskCoordinator;
+
+    @Autowired
+    private AsyncFileTasks asyncFileTasks;
 
     @Autowired
     private FileUploadService fileUploadService;
@@ -252,14 +256,10 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
     // 通过三阶段上传完成后创建异步导入任务
     public ResponseDTO createImportTask(String uploadId) {
         String mergedKey = fileUploadService.completeUpload(uploadId);
-        FileTaskCoordinator.TaskSubmission submission = fileTaskCoordinator.submitImport(
-                new FileTaskCoordinator.ImportCommand(
-                        TaskModuleEnum.ATTENDANCE,
-                        "attendance_import.xlsx",
-                        mergedKey,
-                        null,
-                        getCurrentOperatorId()),
-                new AttendanceImportHandler());
+        AsyncFileTasks.ImportRequest<AttendanceImportRow> request = new AsyncFileTasks.ImportRequest<>(
+                TaskModuleEnum.ATTENDANCE, "attendance_import.xlsx", mergedKey, null,
+                getCurrentOperatorId(), new AttendanceImportHandler());
+        com.qiujie.filetask.TaskSnapshot submission = asyncFileTasks.submitImport(request);
         return Response.success("导入任务已创建", submission.snapshot());
     }
 
@@ -274,13 +274,10 @@ public class AttendanceService extends ServiceImpl<AttendanceMapper, Attendance>
         }
         Map<String, Object> queryParams = new HashMap<>();
         queryParams.put("month", month);
-        FileTaskCoordinator.TaskSubmission submission = fileTaskCoordinator.submitExport(
-                new FileTaskCoordinator.ExportCommand(
-                        TaskModuleEnum.ATTENDANCE,
-                        exportName,
-                        JSON.toJSONString(queryParams),
-                        getCurrentOperatorId()),
-                new AttendanceExportHandler());
+        AsyncFileTasks.ExportRequest<AttendanceMonthVO> request = new AsyncFileTasks.ExportRequest<>(
+                TaskModuleEnum.ATTENDANCE, exportName, JSON.toJSONString(queryParams),
+                getCurrentOperatorId(), new AttendanceExportHandler());
+        com.qiujie.filetask.TaskSnapshot submission = asyncFileTasks.submitExport(request);
         return Response.success("导出任务已创建", submission.snapshot());
     }
 

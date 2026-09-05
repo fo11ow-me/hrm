@@ -8,6 +8,8 @@ import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import javax.sql.DataSource;
 
@@ -19,6 +21,17 @@ public class DataSourceConfig {
     @ConfigurationProperties(prefix = "spring.datasource.master")
     public DataSource masterDataSource() {
         return DataSourceBuilder.create().build();
+    }
+
+    /**
+     * 为主数据源显式配置事务管理器，确保 @Transactional 正确提交。
+     * 多数据源场景下 Spring Boot 可能不确定用哪个 TransactionManager。
+     */
+    @Primary
+    @Bean
+    public PlatformTransactionManager transactionManager(
+            @Qualifier("masterDataSource") DataSource dataSource) {
+        return new DataSourceTransactionManager(dataSource);
     }
 
 

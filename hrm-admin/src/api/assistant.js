@@ -25,8 +25,7 @@ export const chat = (data) => {
  * @returns {Promise} fetch 链式调用的 Promise
  */
 export const chatStream = (data, onToken, onMeta, onError) => {
-  const baseUrl = process.env.VUE_APP_BACKEND_HOST + ':' + process.env.VUE_APP_BACKEND_PORT
-  return fetch(baseUrl + '/assistant/chat', {
+  return fetch('/api/assistant/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -41,7 +40,7 @@ export const chatStream = (data, onToken, onMeta, onError) => {
     // 缓冲区：TCP 流式传输可能在一个 chunk 中间截断 SSE 帧，需要跨 chunk 拼接
     let buffer = ''
 
-    function read() {
+    function read () {
       return reader.read().then(({ done, value }) => {
         if (done) return
         // stream: true 时解码器会保留不完整的多字节 UTF-8 字符，等下一个 chunk 拼接
